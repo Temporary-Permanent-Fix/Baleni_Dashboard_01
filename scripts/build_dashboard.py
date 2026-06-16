@@ -561,12 +561,13 @@ def render_html(payload: dict[str, Any]) -> str:
     <section class="filters" id="filters"></section>
     <section class="cards">
       <div class="card">
-        <span>Podiel AB eliminované</span>
+        <span>Podiel eliminace</span>
         <strong id="kpiRatio">0 %</strong>
         <small>Cieľ: 75 %</small>
         <div class="goalbar"><div id="goalFill"></div></div>
       </div>
-      <div class="card"><span>AB eliminované</span><strong id="kpiEliminated">0</strong><small>StoreJobLines</small></div>
+      <div class="card"><span>Eliminace</span><strong id="kpiEliminated">0</strong><small>StoreJobLines</small></div>
+      <div class="card"><span>Počet vybranej skupiny</span><strong id="kpiSelectedTotal">0</strong><small>StoreJobLines</small></div>
       <div class="card"><span>Celkový počet</span><strong id="kpiTotal">0</strong><small>StoreJobLines</small></div>
       <div class="card"><span>Rozdiel do cieľa</span><strong id="kpiGap">0 b.</strong><small>percentuálne body</small></div>
     </section>
@@ -644,6 +645,22 @@ def render_html(payload: dict[str, Any]) -> str:
       return String(value ?? 'Nezadane');
     }}
 
+    function displayLabel(field, value) {{
+      const normalized = normalizeLabel(value);
+      if (field === 'detail_dopravy' && normalized === 'Nezadane') return 'Pobočka';
+      return normalized;
+    }}
+
+    function isSpecialEliminationGroup(row) {{
+      return normalizeLabel(row.packing_group).toLowerCase() === 'spo pob, dist nebalit standard';
+    }}
+
+    function eliminationCount(row) {{
+      const ab = Number(row.ab_eliminated) || 0;
+      const specialGroup = isSpecialEliminationGroup(row) ? (Number(row.total_count) || 0) : 0;
+      return ab + specialGroup;
+    }}
+
     function filteredRecords() {{
       return records.filter(row => {{
         return Object.entries(filters).every(([field, selected]) => {{
@@ -654,16 +671,16 @@ def render_html(payload: dict[str, Any]) -> str:
     }}
 
     function aggregate(rows) {{
-      let ab = 0;
+      let eliminated = 0;
       let total = 0;
       for (const row of rows) {{
-        ab += Number(row.ab_eliminated) || 0;
+        eliminated += eliminationCount(row);
         total += Number(row.total_count) || 0;
       }}
       return {{
-        ab,
+        ab: eliminated,
         total,
-        ratio: total ? ab / total : 0,
+        ratio: total ? eliminated / total : 0,
       }};
     }}
 
@@ -686,7 +703,7 @@ def render_html(payload: dict[str, Any]) -> str:
         const select = document.getElementById(`filter_${{field}}`);
         if (!select) continue;
         select.innerHTML = allValues(field).map(value => {{
-          const label = value === 'all' ? 'Všetko' : value;
+          const label = value === 'all' ? 'Všetko' : displayLabel(field, value);
           return `<option value="${{escapeHtml(value)}}">${{escapeHtml(label)}}</option>`;
         }}).join('');
         select.value = filters[field];
@@ -709,7 +726,7 @@ def render_html(payload: dict[str, Any]) -> str:
       for (const row of rows) {{
         const key = normalizeLabel(row.date);
         const item = map.get(key) || {{ key, ab: 0, total: 0 }};
-        item.ab += Number(row.ab_eliminated) || 0;
+        item.ab += eliminationCount(row);
         item.total += Number(row.total_count) || 0;
         map.set(key, item);
       }}
@@ -760,16 +777,19 @@ def render_html(payload: dict[str, Any]) -> str:
 
     function renderTable(id, rows, key) {{
       const map = new Map();
+      let totalVolume = 0;
       for (const row of rows) {{
+        totalVolume += Number(row.total_count) || 0;
         const name = normalizeLabel(row[key]);
         const item = map.get(name) || {{ name, ab: 0, total: 0 }};
-        item.ab += Number(row.ab_eliminated) || 0;
+        item.ab += eliminationCount(row);
         item.total += Number(row.total_count) || 0;
         map.set(name, item);
       }}
       const data = [...map.values()].map(item => ({{
         ...item,
-        ratio: item.total ? item.ab / item.total : 0,
+        share: totalVolume ? item.total / totalVolume : 0,
+        elimRatio: item.total ? item.ab / item.total : 0,
       }})).sort((a, b) => b.total - a.total).slice(0, 10);
       const table = document.getElementById(id);
       if (!data.length) {{
@@ -777,14 +797,14 @@ def render_html(payload: dict[str, Any]) -> str:
         return;
       }}
       table.innerHTML = `
-        <thead><tr><th>${{labels[key]}}</th><th>AB</th><th>Total</th><th>Podiel</th></tr></thead>
+        <thead><tr><th>${{labels[key]}}</th><th>SJLs</th><th>Podiel</th><th>Eliminácia</th></tr></thead>
         <tbody>
           ${{data.map(row => `
             <tr>
-              <td>${{escapeHtml(row.name)}}</td>
-              <td>${{formatInt(row.ab)}}</td>
+              <td>${{escapeHtml(displayLabel(key, row.name))}}</td>
               <td>${{formatInt(row.total)}}</td>
-              <td class="ratio ${{ratioClass(row.ratio)}}">${{formatPct(row.ratio)}}</td>
+              <td>${{formatPct(row.share)}}</td>
+              <td class="ratio ${{ratioClass(row.elimRatio)}}">${{formatPct(row.elimRatio)}}</td>
             </tr>
           `).join('')}}
         </tbody>
@@ -797,13 +817,15 @@ def render_html(payload: dict[str, Any]) -> str:
       for (const row of rows) {{
         totalVolume += Number(row.total_count) || 0;
         const name = normalizeLabel(row[key]);
-        const item = map.get(name) || {{ name, total: 0 }};
+        const item = map.get(name) || {{ name, ab: 0, total: 0 }};
+        item.ab += eliminationCount(row);
         item.total += Number(row.total_count) || 0;
         map.set(name, item);
       }}
       const data = [...map.values()].map(item => ({{
         ...item,
         share: totalVolume ? item.total / totalVolume : 0,
+        elimRatio: item.total ? item.ab / item.total : 0,
       }})).sort((a, b) => b.total - a.total).slice(0, 10);
       const table = document.getElementById(id);
       if (!data.length) {{
@@ -811,13 +833,14 @@ def render_html(payload: dict[str, Any]) -> str:
         return;
       }}
       table.innerHTML = `
-        <thead><tr><th>${{labels[key]}}</th><th>SJLs</th><th>Podiel</th></tr></thead>
+        <thead><tr><th>${{labels[key]}}</th><th>SJLs</th><th>Podiel</th><th>Eliminácia</th></tr></thead>
         <tbody>
           ${{data.map(row => `
             <tr>
-              <td>${{escapeHtml(row.name)}}</td>
+              <td>${{escapeHtml(displayLabel(key, row.name))}}</td>
               <td>${{formatInt(row.total)}}</td>
               <td>${{formatPct(row.share)}}</td>
+              <td class="ratio ${{ratioClass(row.elimRatio)}}">${{formatPct(row.elimRatio)}}</td>
             </tr>
           `).join('')}}
         </tbody>
@@ -826,10 +849,12 @@ def render_html(payload: dict[str, Any]) -> str:
 
     function renderKpis(rows) {{
       const summary = aggregate(rows);
+      const globalTotal = aggregate(records).total;
       document.getElementById('kpiRatio').textContent = formatPct(summary.ratio);
       document.getElementById('kpiRatio').className = 'ratio ' + ratioClass(summary.ratio);
       document.getElementById('kpiEliminated').textContent = formatInt(summary.ab);
-      document.getElementById('kpiTotal').textContent = formatInt(summary.total);
+      document.getElementById('kpiSelectedTotal').textContent = formatInt(summary.total);
+      document.getElementById('kpiTotal').textContent = formatInt(globalTotal);
       document.getElementById('kpiGap').textContent = ((summary.ratio - targetRatio) * 100).toLocaleString('sk-SK', {{
         minimumFractionDigits: 1,
         maximumFractionDigits: 1,
