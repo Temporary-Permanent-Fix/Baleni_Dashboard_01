@@ -39,7 +39,8 @@ COLUMN_ALIASES = {
         "packaging group",
         "skupina",
     ],
-    "detail_dopravy": [
+    "doprava": [
+        "doprava",
         "detail dopravy",
         "transport detail",
         "delivery detail",
@@ -236,7 +237,7 @@ def parse_pivot_sheet(worksheet: Any, sheet_name: str) -> tuple[list[dict[str, A
             date_columns.append((column_index, parsed))
 
     records: list[dict[str, Any]] = []
-    current_detail_dopravy = "Nezadane"
+    current_doprava = "Nezadane"
     current_geosize = "Nezadane"
     current_station = "Nezadane"
     current_packing_group = "Nezadane"
@@ -253,7 +254,7 @@ def parse_pivot_sheet(worksheet: Any, sheet_name: str) -> tuple[list[dict[str, A
         row_has_values = row_has_numeric_values(worksheet, row_index, [column for column, _ in date_columns])
         upper_label = label.upper()
         if indent == 0 and not row_has_values and upper_label not in GEOSIZE_VALUES and upper_label not in STATION_VALUES:
-            current_detail_dopravy = label
+            current_doprava = label
             current_geosize = "Nezadane"
             current_station = "Nezadane"
             current_packing_group = "Nezadane"
@@ -276,7 +277,7 @@ def parse_pivot_sheet(worksheet: Any, sheet_name: str) -> tuple[list[dict[str, A
             continue
 
         is_ab = "ab eliminovane" in normalized_label
-        detail_dopravy = current_detail_dopravy
+        doprava = current_doprava
 
         for column_index, date_value in date_columns:
             count = safe_number(worksheet.cell(row_index, column_index).value)
@@ -288,7 +289,7 @@ def parse_pivot_sheet(worksheet: Any, sheet_name: str) -> tuple[list[dict[str, A
                     "geosize": current_geosize,
                     "station": current_station,
                     "packing_group": current_packing_group if indent >= 4 else label,
-                    "detail_dopravy": detail_dopravy,
+                    "doprava": doprava,
                     "ab_eliminated": count if is_ab else 0,
                     "total_count": count,
                     "sheet": sheet_name,
@@ -301,7 +302,7 @@ def parse_pivot_sheet(worksheet: Any, sheet_name: str) -> tuple[list[dict[str, A
         "geosize": "Popisky radku uroven 1",
         "station": "Popisky radku uroven 2",
         "packing_group": "Popisky radku uroven 3",
-        "detail_dopravy": "Detail dopravy",
+        "doprava": "Doprava",
         "ab_eliminated": "AB Eliminovane etikety",
         "total_count": "Pocet jobline",
     }
@@ -346,7 +347,7 @@ def load_records(excel_path: Path) -> tuple[list[dict[str, Any]], dict[str, Any]
                     "geosize": as_dimension(row.get(inferred["geosize"])) if inferred.get("geosize") else "Nezadane",
                     "station": as_dimension(row.get(inferred["station"])) if inferred.get("station") else "Nezadane",
                     "packing_group": as_dimension(row.get(inferred["packing_group"])) if inferred.get("packing_group") else "Nezadane",
-                    "detail_dopravy": as_dimension(row.get(inferred["detail_dopravy"])) if inferred.get("detail_dopravy") else "Nezadane",
+                    "doprava": as_dimension(row.get(inferred["doprava"])) if inferred.get("doprava") else "Nezadane",
                     "ab_eliminated": eliminated,
                     "total_count": total,
                     "sheet": sheet_name,
@@ -589,7 +590,7 @@ def render_html(payload: dict[str, Any]) -> str:
         <div class="table-wrap"><table id="groupTable"></table></div>
       </div>
       <div class="panel">
-        <h2>Detail dopravy</h2>
+        <h2>Doprava</h2>
         <div class="table-wrap"><table id="detailTable"></table></div>
       </div>
     </section>
@@ -604,7 +605,7 @@ def render_html(payload: dict[str, Any]) -> str:
       geosize: 'all',
       station: 'all',
       packing_group: 'all',
-      detail_dopravy: 'all',
+      doprava: 'all',
     }};
 
     const labels = {{
@@ -612,7 +613,7 @@ def render_html(payload: dict[str, Any]) -> str:
       geosize: 'Geosize',
       station: 'Stanice balenĂ­',
       packing_group: 'Baliaca skupina',
-      detail_dopravy: 'Detail dopravy',
+      doprava: 'Doprava',
     }};
 
     const fmtInt = new Intl.NumberFormat('sk-SK', {{ maximumFractionDigits: 0 }});
@@ -647,7 +648,7 @@ def render_html(payload: dict[str, Any]) -> str:
 
     function displayLabel(field, value) {{
       const normalized = normalizeLabel(value);
-      if (field === 'detail_dopravy' && normalized === 'Nezadane') return 'Pobočka';
+      if (field === 'doprava' && normalized === 'Nezadane') return 'Pobočka';
       return normalized;
     }}
 
@@ -694,7 +695,7 @@ def render_html(payload: dict[str, Any]) -> str:
         `Zdroj: ${{meta.source_file || 'unknown'}}`,
         `Generované: ${{meta.generated_at || ''}}`,
         `Riadkov: ${{formatInt(rows.length)}}`,
-        `Rozpoznané pole: ${{meta.detected_columns && meta.detected_columns.detail_dopravy ? 'AB + Total + detail dopravy' : (meta.detected_columns && meta.detected_columns.ab_eliminated ? 'AB + Total' : 'pivot/flat') }}`
+        `Rozpoznané pole: ${{meta.detected_columns && meta.detected_columns.doprava ? 'AB + Total + doprava' : (meta.detected_columns && meta.detected_columns.ab_eliminated ? 'AB + Total' : 'pivot/flat') }}`
       ].map(text => `<span class="pill">${{text}}</span>`).join('');
     }}
 
@@ -790,7 +791,7 @@ def render_html(payload: dict[str, Any]) -> str:
         ...item,
         share: totalVolume ? item.total / totalVolume : 0,
         elimRatio: item.total ? item.ab / item.total : 0,
-      }})).sort((a, b) => b.total - a.total).slice(0, 10);
+      }})).sort((a, b) => b.total - a.total);
       const table = document.getElementById(id);
       if (!data.length) {{
         table.innerHTML = '<tbody><tr><td class="empty">Žiadne dáta pre vybraný filter.</td></tr></tbody>';
@@ -826,7 +827,7 @@ def render_html(payload: dict[str, Any]) -> str:
         ...item,
         share: totalVolume ? item.total / totalVolume : 0,
         elimRatio: item.total ? item.ab / item.total : 0,
-      }})).sort((a, b) => b.total - a.total).slice(0, 10);
+      }})).sort((a, b) => b.total - a.total);
       const table = document.getElementById(id);
       if (!data.length) {{
         table.innerHTML = '<tbody><tr><td class="empty">Žiadne dáta pre vybraný filter.</td></tr></tbody>';
@@ -872,7 +873,7 @@ def render_html(payload: dict[str, Any]) -> str:
       renderTable('geosizeTable', rows, 'geosize');
       renderTable('stationTable', rows, 'station');
       renderTable('groupTable', rows, 'packing_group');
-      renderVolumeTable('detailTable', rows, 'detail_dopravy');
+      renderVolumeTable('detailTable', rows, 'doprava');
     }}
 
     render();
