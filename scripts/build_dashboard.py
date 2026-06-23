@@ -29,14 +29,11 @@ COLUMN_ALIASES = {
     "packing_group": ["baliaca skupina", "balici skupina", "packing group", "packaging group", "skupina"],
     "doprava": ["doprava", "detail dopravy", "transport detail", "delivery detail"],
     "ab_eliminated": ["ab eliminovane", "ab eliminated", "eliminovane", "eliminated"],
-    "piece_count": ["pocet kusu", "počet kusů", "pieces", "quantity", "mnozstvo", "mnozstvi", "množstvo", "množství", "kusy"],
     "total_count": ["celkovy pocet", "total count", "count", "pocet", "pocet jobline", "storejoblines", "store job lines"],
 }
 
 GEOSIZE_VALUES = {"SPO", "BPO", "XPO", "XL", "VB"}
 STATION_VALUES = {"EXPRESS", "EXPRES", "L40", "MO", "SO01", "SOA1", "SOA0", "XXL"}
-JOBLINE_MEASURES = {"pocet jobline", "jobline", "storejoblines", "store job lines"}
-PIECE_MEASURES = {"pocet kusu", "počet kusů", "pieces", "quantity", "mnozstvo", "mnozstvi", "množstvo", "množství", "kusy"}
 
 
 def normalize_text(value: Any) -> str:
@@ -130,22 +127,11 @@ def as_dimension(value: Any, fallback: str = "Nezadane") -> str:
 def as_date(value: Any) -> str:
     if pd.isna(value):
         return "Nezadane"
-    parsed = parse_date_value(value)
-    if parsed is None:
-        return as_dimension(value)
-    return parsed
-
-
-def parse_date_value(value: Any) -> str | None:
-    if pd.isna(value):
-        return None
     text = str(value).strip()
-    if not text:
-        return None
     dayfirst = not bool(re.match(r"^\d{4}-\d{1,2}-\d{1,2}$", text))
     parsed = pd.to_datetime(value, errors="coerce", dayfirst=dayfirst)
     if pd.isna(parsed):
-        return None
+        return as_dimension(value)
     return parsed.strftime("%Y-%m-%d")
 
 
@@ -175,47 +161,8 @@ def find_pivot_header_row(worksheet: Any) -> int | None:
     return None
 
 
-def measure_kind(value: Any) -> str | None:
-    normalized = normalize_text(value)
-    if normalized in {normalize_text(item) for item in JOBLINE_MEASURES}:
-        return "jobline"
-    if normalized in {normalize_text(item) for item in PIECE_MEASURES}:
-        return "piece"
-    return None
-
-
-def find_pivot_date_row(worksheet: Any, header_row: int) -> int | None:
-    best_row: int | None = None
-    best_score = 0
-    for row_index in range(1, header_row + 1):
-        score = 0
-        for column_index in range(2, worksheet.max_column + 1):
-            if parse_date_value(worksheet.cell(row_index, column_index).value) is not None:
-                score += 1
-        if score > best_score:
-            best_row = row_index
-            best_score = score
-    return best_row if best_score >= 2 else None
-
-
-def find_pivot_measure_row(worksheet: Any, date_row: int, header_row: int) -> int | None:
-    upper_bound = min(worksheet.max_row, header_row + 1)
-    best_row: int | None = None
-    best_score = 0
-    for row_index in range(date_row + 1, upper_bound + 1):
-        score = 0
-        non_empty = 0
-        for column_index in range(2, worksheet.max_column + 1):
-            value = worksheet.cell(row_index, column_index).value
-            if pd.isna(value) or value is None or str(value).strip() == "":
-                continue
-            non_empty += 1
-            if measure_kind(value) is not None:
-                score += 1
-        if score > best_score and score >= 2 and score >= max(2, non_empty // 2):
-            best_row = row_index
-            best_score = score
-    return best_row
+def row_has_numeric_values(worksheet: Any, row_index: int, date_columns: list[int]) -> bool:
+    return any(is_numeric_value(worksheet.cell(row_index, column_index).value) for column_index in date_columns)
 
 
 def parse_pivot_sheet(worksheet: Any, sheet_name: str) -> tuple[list[dict[str, Any]], dict[str, Any]]:
@@ -223,34 +170,19 @@ def parse_pivot_sheet(worksheet: Any, sheet_name: str) -> tuple[list[dict[str, A
     if header_row is None:
         return [], {}
 
-    date_row = find_pivot_date_row(worksheet, header_row)
-    if date_row is None:
-        return [], {}
-    measure_row = find_pivot_measure_row(worksheet, date_row, header_row)
-
-    date_by_column: dict[int, str] = {}
-    current_date: str | None = None
+    date_columns: list[tuple[int, str]] = []
     for column_index in range(2, worksheet.max_column + 1):
-        parsed = parse_date_value(worksheet.cell(date_row, column_index).value)
-        if parsed is not None:
-            current_date = parsed
-        if current_date is not None:
-            date_by_column[column_index] = current_date
+        parsed = as_date(worksheet.cell(header_row, column_index).value)
+        if parsed != "Nezadane":
+            date_columns.append((column_index, parsed))
 
-    measure_by_column: dict[int, str | None] = {}
-    if measure_row is not None:
-        for column_index in range(2, worksheet.max_column + 1):
-            measure_by_column[column_index] = measure_kind(worksheet.cell(measure_row, column_index).value)
-
-    records_map: dict[tuple[str, str, str, str, str, str], dict[str, Any]] = {}
+    records: list[dict[str, Any]] = []
     current_doprava = "Nezadane"
     current_geosize = "Nezadane"
     current_station = "Nezadane"
     current_packing_group = "Nezadane"
 
-    start_row = (measure_row or date_row) + 1
-
-    for row_index in range(start_row, worksheet.max_row + 1):
+    for row_index in range(header_row + 1, worksheet.max_row + 1):
         label = as_dimension(worksheet.cell(row_index, 1).value)
         if label == "Nezadane":
             continue
@@ -259,10 +191,7 @@ def parse_pivot_sheet(worksheet: Any, sheet_name: str) -> tuple[list[dict[str, A
             continue
 
         indent = get_cell_indent(worksheet.cell(row_index, 1))
-        row_has_values = any(
-            is_numeric_value(worksheet.cell(row_index, column_index).value)
-            for column_index in range(2, worksheet.max_column + 1)
-        )
+        row_has_values = row_has_numeric_values(worksheet, row_index, [column for column, _ in date_columns])
         upper_label = label.upper()
 
         if indent == 0 and not row_has_values and upper_label not in GEOSIZE_VALUES and upper_label not in STATION_VALUES:
@@ -286,40 +215,25 @@ def parse_pivot_sheet(worksheet: Any, sheet_name: str) -> tuple[list[dict[str, A
         if not row_has_values:
             continue
 
+        is_ab = "ab eliminovane" in normalized_label
         doprava = current_doprava
-        row_group = current_packing_group if indent >= 4 else label
 
-        for column_index in range(2, worksheet.max_column + 1):
-            value = safe_number(worksheet.cell(row_index, column_index).value)
-            if value <= 0:
+        for column_index, date_value in date_columns:
+            count = safe_number(worksheet.cell(row_index, column_index).value)
+            if count <= 0:
                 continue
-            date_value = date_by_column.get(column_index)
-            if date_value is None:
-                continue
-            kind = measure_by_column.get(column_index) if measure_row is not None else "jobline"
-            key = (date_value, current_geosize, current_station, row_group, doprava, sheet_name)
-            record = records_map.setdefault(
-                key,
+            records.append(
                 {
                     "date": date_value,
                     "geosize": current_geosize,
                     "station": current_station,
-                    "packing_group": row_group,
+                    "packing_group": current_packing_group if indent >= 4 else label,
                     "doprava": doprava,
-                    "ab_eliminated": 0.0,
-                    "total_count": 0.0,
-                    "piece_count": 0.0,
+                    "ab_eliminated": count if is_ab else 0,
+                    "total_count": count,
                     "sheet": sheet_name,
-                },
+                }
             )
-            if kind == "piece":
-                record["piece_count"] += value
-            else:
-                record["total_count"] += value
-                if "ab eliminovane" in normalized_label:
-                    record["ab_eliminated"] += value
-
-    records = list(records_map.values())
 
     detected = {
         "layout": "pivot",
@@ -330,7 +244,6 @@ def parse_pivot_sheet(worksheet: Any, sheet_name: str) -> tuple[list[dict[str, A
         "doprava": "Doprava",
         "ab_eliminated": "AB Eliminovane etikety",
         "total_count": "Pocet jobline",
-        "piece_count": "Pocet kusu",
     }
     return records, detected
 
@@ -347,7 +260,7 @@ def load_records(excel_path: Path) -> tuple[list[dict[str, Any]], dict[str, Any]
             continue
 
         inferred = infer_columns(list(frame.columns))
-        standard_layout = bool(inferred.get("ab_eliminated") or inferred.get("total_count") or inferred.get("piece_count"))
+        standard_layout = bool(inferred.get("ab_eliminated") or inferred.get("total_count"))
         if not standard_layout:
             pivot_records, pivot_detected = parse_pivot_sheet(workbook[sheet_name], sheet_name)
             if pivot_records:
@@ -377,10 +290,8 @@ def load_records(excel_path: Path) -> tuple[list[dict[str, Any]], dict[str, Any]
         for _, row in frame.iterrows():
             total_column = inferred.get("total_count")
             eliminated_column = inferred.get("ab_eliminated")
-            piece_column = inferred.get("piece_count")
             total = safe_number(row.get(total_column), 1) if total_column else 1
             eliminated = safe_number(row.get(eliminated_column), 0) if eliminated_column else 0
-            pieces = safe_number(row.get(piece_column), 0) if piece_column else 0
             if total <= 0 and eliminated <= 0:
                 continue
             records.append(
@@ -392,7 +303,6 @@ def load_records(excel_path: Path) -> tuple[list[dict[str, Any]], dict[str, Any]
                     "doprava": as_dimension(row.get(inferred["doprava"])) if inferred.get("doprava") else "Nezadane",
                     "ab_eliminated": eliminated,
                     "total_count": total,
-                    "piece_count": pieces,
                     "sheet": sheet_name,
                 }
             )
@@ -775,10 +685,6 @@ def render_html(payload: dict[str, Any]) -> str:
       }, 0);
     }
 
-    function pieceCount(rows) {
-      return rows.reduce((sum, row) => sum + (Number(row.piece_count) || 0), 0);
-    }
-
     function aggregate(rows) {
       let eliminated = 0;
       let total = 0;
@@ -921,12 +827,6 @@ def render_html(payload: dict[str, Any]) -> str:
             <small id="${prefix}kpiBalikovkaCount">0 SJLs</small>
             <small>Target: &lt; 10 % of SJLs</small>
           </div>
-          <div class="card">
-            <span>Počet kusov</span>
-            <strong id="${prefix}kpiPieces">0</strong>
-            <small id="${prefix}kpiPiecesShare">0 % z kusov</small>
-            <small>From Počet kusů values</small>
-          </div>
           <div class="card"><span>Eliminated</span><strong id="${prefix}kpiEliminated">0</strong><small>StoreJobLines</small></div>
           <div class="card"><span>Selected total</span><strong id="${prefix}kpiSelectedTotal">0</strong><small>StoreJobLines</small></div>
           <div class="card"><span>Dashboard total</span><strong id="${prefix}kpiTotal">0</strong><small>StoreJobLines</small></div>
@@ -977,15 +877,12 @@ def render_html(payload: dict[str, Any]) -> str:
       function renderMeta(rows) {
         const meta = payload.metadata || {};
         const totalRows = sheetRows.length;
-        const detectionLabel = info.detected?.piece_count
-          ? 'AB + Total + Pieces + transport'
-          : (info.detected?.doprava ? 'AB + Total + transport' : (info.detected?.ab_eliminated ? 'AB + Total' : 'pivot/flat'));
         document.getElementById(`${prefix}meta`).innerHTML = [
           `Source: ${meta.source_file || 'unknown'}`,
           `Sheet: ${sheetName}`,
           `Generated: ${meta.generated_at || ''}`,
           `Rows: ${formatInt(rows.length)} / ${formatInt(totalRows)}`,
-          `Detected: ${detectionLabel}`,
+          `Detected: ${info.detected?.doprava ? 'AB + Total + transport' : (info.detected?.ab_eliminated ? 'AB + Total' : 'pivot/flat')}`,
         ].map(text => `<span class="pill">${text}</span>`).join('');
       }
 
@@ -1014,16 +911,11 @@ def render_html(payload: dict[str, Any]) -> str:
         const dashboardSummary = aggregate(sheetRows);
         const balikovka = balikovkaCount(rows, sheetName);
         const balikovkaRatio = summary.total ? balikovka / summary.total : 0;
-        const selectedPieces = pieceCount(rows);
-        const dashboardPieces = pieceCount(sheetRows);
-        const pieceRatio = dashboardPieces ? selectedPieces / dashboardPieces : 0;
         document.getElementById(`${prefix}kpiRatio`).textContent = formatPct(summary.ratio);
         document.getElementById(`${prefix}kpiRatio`).className = 'ratio ' + ratioClass(summary.ratio);
         document.getElementById(`${prefix}kpiBalikovka`).textContent = formatPct(balikovkaRatio);
         document.getElementById(`${prefix}kpiBalikovka`).className = 'ratio ' + balikovkaClass(balikovkaRatio);
         document.getElementById(`${prefix}kpiBalikovkaCount`).textContent = `${formatInt(balikovka)} SJLs`;
-        document.getElementById(`${prefix}kpiPieces`).textContent = formatInt(selectedPieces);
-        document.getElementById(`${prefix}kpiPiecesShare`).textContent = `${formatPct(pieceRatio)} z kusov`;
         document.getElementById(`${prefix}kpiEliminated`).textContent = formatInt(summary.ab);
         document.getElementById(`${prefix}kpiSelectedTotal`).textContent = formatInt(summary.total);
         document.getElementById(`${prefix}kpiTotal`).textContent = formatInt(dashboardSummary.total);
