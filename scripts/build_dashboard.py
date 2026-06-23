@@ -1,4 +1,4 @@
-from __future__ import annotations
+﻿from __future__ import annotations
 
 import json
 import math
@@ -23,76 +23,17 @@ OUTPUT_FILE = OUTPUT_DIR / "packaging_dashboard.html"
 TARGET_RATIO = 0.75
 
 COLUMN_ALIASES = {
-    "date": ["datum", "dĂˇtum", "date", "day", "den"],
-    "geosize": ["geosize", "geo size", "velikost", "velikosĹĄ", "size"],
-    "station": [
-        "stanice baleni",
-        "stanice balenĂ­",
-        "stanica balenia",
-        "packing station",
-        "station",
-    ],
-    "packing_group": [
-        "baliaca skupina",
-        "balici skupina",
-        "packing group",
-        "packaging group",
-        "skupina",
-    ],
-    "doprava": [
-        "doprava",
-        "detail dopravy",
-        "transport detail",
-        "delivery detail",
-    ],
-    "ab_eliminated": [
-        "ab eliminovane",
-        "ab eliminovanĂ©",
-        "ab eliminated",
-        "eliminovane",
-        "eliminated",
-    ],
-    "total_count": [
-        "celkovy pocet",
-        "celkovĂ˝ poÄŤet",
-        "total count",
-        "count",
-        "pocet",
-        "poÄŤet",
-        "storejoblines",
-        "store job lines",
-    ],
+    "date": ["datum", "date", "day", "den"],
+    "geosize": ["geosize", "geo size", "velikost", "size"],
+    "station": ["stanice baleni", "stanica balenia", "packing station", "station"],
+    "packing_group": ["baliaca skupina", "balici skupina", "packing group", "packaging group", "skupina"],
+    "doprava": ["doprava", "detail dopravy", "transport detail", "delivery detail"],
+    "ab_eliminated": ["ab eliminovane", "ab eliminated", "eliminovane", "eliminated"],
+    "total_count": ["celkovy pocet", "total count", "count", "pocet", "pocet jobline", "storejoblines", "store job lines"],
 }
 
 GEOSIZE_VALUES = {"SPO", "BPO", "XPO", "XL", "VB"}
 STATION_VALUES = {"EXPRESS", "EXPRES", "L40", "MO", "SO01", "SOA1", "SOA0", "XXL"}
-
-
-def normalize_text(value: Any) -> str:
-    text = str(value).strip().lower()
-    text = (
-        text.replace("Ăˇ", "a")
-        .replace("Ă¤", "a")
-        .replace("ÄŤ", "c")
-        .replace("ÄŹ", "d")
-        .replace("Ă©", "e")
-        .replace("Ä›", "e")
-        .replace("Ă­", "i")
-        .replace("Äľ", "l")
-        .replace("Äş", "l")
-        .replace("Ĺ", "n")
-        .replace("Ăł", "o")
-        .replace("Ă´", "o")
-        .replace("Ĺ™", "r")
-        .replace("Ĺ•", "r")
-        .replace("Ĺˇ", "s")
-        .replace("ĹĄ", "t")
-        .replace("Ăş", "u")
-        .replace("ĹŻ", "u")
-        .replace("Ă˝", "y")
-        .replace("Ĺľ", "z")
-    )
-    return re.sub(r"[^a-z0-9]+", " ", text).strip()
 
 
 def normalize_text(value: Any) -> str:
@@ -111,8 +52,7 @@ def find_excel_file() -> Path:
     ]
     if not excel_files:
         raise FileNotFoundError(
-            "V zlozke input nie je ziaden Excel subor. "
-            "Vloz tam .xlsx, .xls alebo .xlsm subor."
+            "V zlozke input nie je ziaden Excel subor. Vloz tam .xlsx, .xls alebo .xlsm subor."
         )
     return sorted(excel_files, key=lambda path: path.stat().st_mtime, reverse=True)[0]
 
@@ -253,6 +193,7 @@ def parse_pivot_sheet(worksheet: Any, sheet_name: str) -> tuple[list[dict[str, A
         indent = get_cell_indent(worksheet.cell(row_index, 1))
         row_has_values = row_has_numeric_values(worksheet, row_index, [column for column, _ in date_columns])
         upper_label = label.upper()
+
         if indent == 0 and not row_has_values and upper_label not in GEOSIZE_VALUES and upper_label not in STATION_VALUES:
             current_doprava = label
             current_geosize = "Nezadane"
@@ -268,11 +209,9 @@ def parse_pivot_sheet(worksheet: Any, sheet_name: str) -> tuple[list[dict[str, A
             current_station = "Expres" if upper_label in {"EXPRESS", "EXPRES"} else upper_label
             current_packing_group = "Nezadane"
             continue
-
-        if indent == 3 and not row_has_values:
+        if indent >= 3 and not row_has_values:
             current_packing_group = label
             continue
-
         if not row_has_values:
             continue
 
@@ -313,7 +252,7 @@ def load_records(excel_path: Path) -> tuple[list[dict[str, Any]], dict[str, Any]
     sheets = pd.read_excel(excel_path, sheet_name=None)
     workbook = load_workbook(excel_path, data_only=True)
     records: list[dict[str, Any]] = []
-    sheet_info = []
+    sheet_info: list[dict[str, Any]] = []
     detected_columns: dict[str, Any] = {}
 
     for sheet_name, frame in sheets.items():
@@ -327,11 +266,25 @@ def load_records(excel_path: Path) -> tuple[list[dict[str, Any]], dict[str, Any]
             if pivot_records:
                 records.extend(pivot_records)
                 raw_sheet = workbook[sheet_name]
-                sheet_info.append({"sheet": sheet_name, "rows": raw_sheet.max_row, "columns": raw_sheet.max_column, "detected": pivot_detected})
+                sheet_info.append(
+                    {
+                        "sheet": sheet_name,
+                        "rows": raw_sheet.max_row,
+                        "columns": raw_sheet.max_column,
+                        "detected": pivot_detected,
+                    }
+                )
                 detected_columns = detected_columns or pivot_detected
                 continue
 
-        sheet_info.append({"sheet": sheet_name, "rows": len(frame), "columns": len(frame.columns), "detected": inferred})
+        sheet_info.append(
+            {
+                "sheet": sheet_name,
+                "rows": len(frame),
+                "columns": len(frame.columns),
+                "detected": inferred,
+            }
+        )
         detected_columns = detected_columns or inferred
 
         for _, row in frame.iterrows():
@@ -374,14 +327,14 @@ def to_json_for_html(payload: dict[str, Any]) -> str:
 
 def render_html(payload: dict[str, Any]) -> str:
     data_json = to_json_for_html(payload)
-    return f"""<!doctype html>
+    html = """<!doctype html>
 <html lang="sk">
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Vývoj balenia dashboard</title>
+  <title>Vyvoj balenia dashboard</title>
   <style>
-    :root {{
+    :root {
       --bg: #f5f7fa;
       --panel: #ffffff;
       --ink: #15202b;
@@ -392,59 +345,86 @@ def render_html(payload: dict[str, Any]) -> str:
       --amber: #d97706;
       --red: #dc2626;
       --shadow: 0 12px 30px rgba(23, 37, 84, .08);
-    }}
-    * {{ box-sizing: border-box; }}
-    body {{
+    }
+    * { box-sizing: border-box; }
+    body {
       margin: 0;
       background: var(--bg);
       color: var(--ink);
       font-family: "Segoe UI", Arial, sans-serif;
-    }}
-    header {{
+    }
+    header {
       background: #111827;
       color: white;
       padding: 24px clamp(16px, 3vw, 36px);
-    }}
-    header h1 {{
+    }
+    header h1 {
       margin: 0 0 8px;
       font-size: clamp(24px, 3vw, 36px);
       letter-spacing: 0;
-    }}
-    header p {{ margin: 0; color: #cbd5e1; }}
-    main {{
+    }
+    header p { margin: 0; color: #cbd5e1; }
+    main {
       width: min(1440px, 100%);
       margin: 0 auto;
       padding: 24px clamp(12px, 2.5vw, 32px) 36px;
-    }}
-    .meta {{
+    }
+    .meta {
       display: flex;
       flex-wrap: wrap;
       gap: 10px;
       color: var(--muted);
       font-size: 13px;
       margin-bottom: 16px;
-    }}
-    .pill {{
+    }
+    .pill {
       background: #eaf0f8;
       border: 1px solid var(--line);
       border-radius: 999px;
       padding: 6px 10px;
-    }}
-    .filters {{
+    }
+    .dashboards {
+      display: grid;
+      gap: 22px;
+    }
+    .dashboard {
+      display: grid;
+      gap: 14px;
+      padding: 18px;
+      background: #eef2f7;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+    }
+    .dashboard-head {
+      display: flex;
+      align-items: flex-start;
+      justify-content: space-between;
+      gap: 16px;
+    }
+    .dashboard-head h2 {
+      margin: 0 0 4px;
+      font-size: 20px;
+      letter-spacing: 0;
+    }
+    .dashboard-head p {
+      margin: 0;
+      color: var(--muted);
+      font-size: 13px;
+    }
+    .filters {
       display: grid;
       grid-template-columns: repeat(5, minmax(160px, 1fr));
       gap: 12px;
-      margin-bottom: 18px;
-    }}
-    label {{
+    }
+    label {
       display: grid;
       gap: 6px;
       color: var(--muted);
       font-size: 12px;
       font-weight: 600;
       text-transform: uppercase;
-    }}
-    select {{
+    }
+    select {
       min-height: 38px;
       border: 1px solid var(--line);
       border-radius: 8px;
@@ -453,297 +433,227 @@ def render_html(payload: dict[str, Any]) -> str:
       color: var(--ink);
       font-size: 14px;
       width: 100%;
-    }}
-    .cards {{
+    }
+    .cards {
       display: grid;
       grid-template-columns: repeat(4, minmax(170px, 1fr));
       gap: 14px;
-      margin-bottom: 18px;
-    }}
-    .card, .panel {{
+    }
+    .card, .panel {
       background: var(--panel);
       border: 1px solid var(--line);
       border-radius: 8px;
       box-shadow: var(--shadow);
-    }}
-    .card {{ padding: 16px; }}
-    .card span {{
+    }
+    .card { padding: 16px; }
+    .card span {
       color: var(--muted);
       font-size: 12px;
       font-weight: 700;
       text-transform: uppercase;
-    }}
-    .card strong {{
+    }
+    .card strong {
       display: block;
       margin-top: 8px;
       font-size: clamp(24px, 2.8vw, 34px);
-    }}
-    .card small {{ color: var(--muted); }}
-    .goalbar {{
+    }
+    .card small { color: var(--muted); }
+    .goalbar {
       height: 9px;
       background: #e5e7eb;
       border-radius: 999px;
       overflow: hidden;
       margin-top: 12px;
-    }}
-    .goalbar div {{
+    }
+    .goalbar div {
       height: 100%;
       width: 0;
       background: var(--green);
       transition: width .2s ease;
-    }}
-    .grid {{
+    }
+    .grid {
       display: grid;
       grid-template-columns: minmax(0, 1.35fr) minmax(340px, .65fr);
       gap: 16px;
       align-items: start;
-    }}
-    .panel {{
+    }
+    .panel {
       padding: 16px;
       min-width: 0;
-    }}
-    .panel h2 {{
+    }
+    .panel h2 {
       margin: 0 0 14px;
       font-size: 18px;
       letter-spacing: 0;
-    }}
-    .chart-wrap {{
+    }
+    .chart-wrap {
       width: 100%;
       height: 360px;
-    }}
-    svg {{ width: 100%; height: 100%; display: block; }}
-    .table-wrap {{ overflow: auto; }}
-    table {{
+    }
+    svg { width: 100%; height: 100%; display: block; }
+    .table-wrap { overflow: auto; }
+    table {
       width: 100%;
       border-collapse: collapse;
       font-size: 13px;
-    }}
-    th, td {{
+    }
+    th, td {
       padding: 9px 8px;
       border-bottom: 1px solid var(--line);
       text-align: right;
       white-space: nowrap;
-    }}
-    th:first-child, td:first-child {{ text-align: left; }}
-    th {{
+    }
+    th:first-child, td:first-child { text-align: left; }
+    th {
       color: var(--muted);
       font-size: 12px;
       text-transform: uppercase;
-    }}
-    .ratio.good {{ color: var(--green); font-weight: 700; }}
-    .ratio.mid {{ color: var(--amber); font-weight: 700; }}
-    .ratio.bad {{ color: var(--red); font-weight: 700; }}
-    .empty {{
+    }
+    .ratio.good { color: var(--green); font-weight: 700; }
+    .ratio.mid { color: var(--amber); font-weight: 700; }
+    .ratio.bad { color: var(--red); font-weight: 700; }
+    .empty {
       padding: 28px;
       text-align: center;
       color: var(--muted);
       border: 1px dashed var(--line);
       border-radius: 8px;
       background: #fbfcfe;
-    }}
-    @media (max-width: 1020px) {{
-      .filters, .cards, .grid {{ grid-template-columns: 1fr 1fr; }}
-      .grid .panel:first-child {{ grid-column: 1 / -1; }}
-    }}
-    @media (max-width: 680px) {{
-      .filters, .cards, .grid {{ grid-template-columns: 1fr; }}
-      header {{ padding-top: 18px; padding-bottom: 18px; }}
-      .chart-wrap {{ height: 300px; }}
-    }}
+    }
+    @media (max-width: 1020px) {
+      .filters, .cards, .grid { grid-template-columns: 1fr 1fr; }
+      .grid .panel:first-child { grid-column: 1 / -1; }
+      .dashboard-head { flex-direction: column; }
+    }
+    @media (max-width: 680px) {
+      .filters, .cards, .grid { grid-template-columns: 1fr; }
+      header { padding-top: 18px; padding-bottom: 18px; }
+      .chart-wrap { height: 300px; }
+    }
   </style>
 </head>
 <body>
   <header>
-    <h1>Vývoj balenia</h1>
-    <p>AB Eliminované / celkový počet, cieľ 75 %</p>
+    <h1>Vyvoj balenia</h1>
+    <p>AB eliminated / total count, target 75 %</p>
   </header>
   <main>
     <div class="meta" id="meta"></div>
-    <section class="filters" id="filters"></section>
-    <section class="cards">
-      <div class="card">
-        <span>Podiel eliminace</span>
-        <strong id="kpiRatio">0 %</strong>
-        <small>Cieľ: 75 %</small>
-        <div class="goalbar"><div id="goalFill"></div></div>
-      </div>
-      <div class="card"><span>Eliminace</span><strong id="kpiEliminated">0</strong><small>StoreJobLines</small></div>
-      <div class="card"><span>Počet vybranej skupiny</span><strong id="kpiSelectedTotal">0</strong><small>StoreJobLines</small></div>
-      <div class="card"><span>Celkový počet</span><strong id="kpiTotal">0</strong><small>StoreJobLines</small></div>
-      <div class="card"><span>Rozdiel do cieľa</span><strong id="kpiGap">0 b.</strong><small>percentuálne body</small></div>
-    </section>
-    <section class="grid">
-      <div class="panel">
-        <h2>Trend po dňoch</h2>
-        <div class="chart-wrap" id="trendChart"></div>
-      </div>
-      <div class="panel">
-        <h2>Geosize</h2>
-        <div class="table-wrap"><table id="geosizeTable"></table></div>
-      </div>
-      <div class="panel">
-        <h2>Stanice balení</h2>
-        <div class="table-wrap"><table id="stationTable"></table></div>
-      </div>
-      <div class="panel">
-        <h2>Baliace skupiny</h2>
-        <div class="table-wrap"><table id="groupTable"></table></div>
-      </div>
-      <div class="panel">
-        <h2>Doprava</h2>
-        <div class="table-wrap"><table id="detailTable"></table></div>
-      </div>
-    </section>
+    <div class="dashboards" id="dashboards"></div>
   </main>
-  <script id="dashboard-data" type="application/json">{data_json}</script>
+  <script id="dashboard-data" type="application/json">__DATA_JSON__</script>
   <script>
     const payload = JSON.parse(document.getElementById('dashboard-data').textContent);
     const records = payload.records || [];
     const targetRatio = payload.metadata?.target_ratio ?? 0.75;
-    let filters = {{
-      date: 'all',
-      geosize: 'all',
-      station: 'all',
-      packing_group: 'all',
-      doprava: 'all',
-    }};
+    const sheetOrder = (payload.metadata?.sheet_info || []).map(info => info.sheet).filter(Boolean);
+    const dashboardSheets = sheetOrder.length
+      ? sheetOrder
+      : [...new Set(records.map(row => row.sheet).filter(Boolean))];
 
-    const labels = {{
-      date: 'DĂˇtum',
+    const labels = {
+      date: 'Date',
       geosize: 'Geosize',
-      station: 'Stanice balenĂ­',
-      packing_group: 'Baliaca skupina',
-      doprava: 'Doprava',
-    }};
+      station: 'Packing station',
+      packing_group: 'Packing group',
+      doprava: 'Transport detail',
+    };
 
-    const fmtInt = new Intl.NumberFormat('sk-SK', {{ maximumFractionDigits: 0 }});
-    const fmtPct = new Intl.NumberFormat('sk-SK', {{
+    const fmtInt = new Intl.NumberFormat('sk-SK', { maximumFractionDigits: 0 });
+    const fmtPct = new Intl.NumberFormat('sk-SK', {
       minimumFractionDigits: 1,
       maximumFractionDigits: 1,
-    }});
+    });
 
-    function formatInt(value) {{
+    function formatInt(value) {
       return fmtInt.format(Math.round(Number(value) || 0));
-    }}
+    }
 
-    function formatPct(value) {{
+    function formatPct(value) {
       return fmtPct.format((Number(value) || 0) * 100) + ' %';
-    }}
+    }
 
-    function ratioClass(value) {{
+    function ratioClass(value) {
       if (value >= targetRatio) return 'good';
       if (value >= 0.65) return 'mid';
       return 'bad';
-    }}
+    }
 
-    function escapeHtml(value) {{
-      return String(value).replace(/[&<>"']/g, char => ({{
+    function slugify(value) {
+      return String(value ?? '')
+        .toLowerCase()
+        .normalize('NFKD')
+        .replace(/[\u0300-\u036f]/g, '')
+        .replace(/[^a-z0-9]+/g, '-')
+        .replace(/^-+|-+$/g, '');
+    }
+
+    function escapeHtml(value) {
+      return String(value).replace(/[&<>"']/g, char => ({
         '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#039;'
-      }}[char]));
-    }}
+      }[char]));
+    }
 
-    function normalizeLabel(value) {{
+    function normalizeLabel(value) {
       return String(value ?? 'Nezadane');
-    }}
+    }
 
-    function displayLabel(field, value) {{
+    function displayLabel(field, value) {
       const normalized = normalizeLabel(value);
-      if (field === 'doprava' && normalized === 'Nezadane') return 'Pobočka';
+      if (field === 'doprava' && normalized === 'Nezadane') return 'Pobocka';
       return normalized;
-    }}
+    }
 
-    function isSpecialEliminationGroup(row) {{
+    function isSpecialEliminationGroup(row) {
       return normalizeLabel(row.packing_group).toLowerCase() === 'spo pob, dist nebalit standard';
-    }}
+    }
 
-    function eliminationCount(row) {{
+    function eliminationCount(row) {
       const ab = Number(row.ab_eliminated) || 0;
       const specialGroup = isSpecialEliminationGroup(row) ? (Number(row.total_count) || 0) : 0;
       return ab + specialGroup;
-    }}
+    }
 
-    function filteredRecords() {{
-      return records.filter(row => {{
-        return Object.entries(filters).every(([field, selected]) => {{
-          if (selected === 'all') return true;
-          return normalizeLabel(row[field]) === selected;
-        }});
-      }});
-    }}
-
-    function aggregate(rows) {{
+    function aggregate(rows) {
       let eliminated = 0;
       let total = 0;
-      for (const row of rows) {{
+      for (const row of rows) {
         eliminated += eliminationCount(row);
         total += Number(row.total_count) || 0;
-      }}
-      return {{
+      }
+      return {
         ab: eliminated,
         total,
         ratio: total ? eliminated / total : 0,
-      }};
-    }}
+      };
+    }
 
-    function allValues(field) {{
-      return ['all', ...new Set(records.map(row => normalizeLabel(row[field])))].sort((a, b) => a.localeCompare(b, 'sk'));
-    }}
+    function allValues(rows, field) {
+      return ['all', ...new Set(rows.map(row => normalizeLabel(row[field])))].sort((a, b) => a.localeCompare(b, 'sk'));
+    }
 
-    function renderMeta(rows) {{
-      const meta = payload.metadata || {{}};
-      document.getElementById('meta').innerHTML = [
-        `Zdroj: ${{meta.source_file || 'unknown'}}`,
-        `Generované: ${{meta.generated_at || ''}}`,
-        `Riadkov: ${{formatInt(rows.length)}}`,
-        `Rozpoznané pole: ${{meta.detected_columns && meta.detected_columns.doprava ? 'AB + Total + doprava' : (meta.detected_columns && meta.detected_columns.ab_eliminated ? 'AB + Total' : 'pivot/flat') }}`
-      ].map(text => `<span class="pill">${{text}}</span>`).join('');
-    }}
-
-    function renderFilters() {{
-      for (const field of Object.keys(filters)) {{
-        const select = document.getElementById(`filter_${{field}}`);
-        if (!select) continue;
-        select.innerHTML = allValues(field).map(value => {{
-          const label = value === 'all' ? 'Všetko' : displayLabel(field, value);
-          return `<option value="${{escapeHtml(value)}}">${{escapeHtml(label)}}</option>`;
-        }}).join('');
-        select.value = filters[field];
-        select.onchange = event => {{
-          filters[field] = event.target.value;
-          render();
-        }};
-      }}
-    }}
-
-    function ensureFiltersMarkup() {{
-      const holder = document.getElementById('filters');
-      holder.innerHTML = Object.keys(labels).map(field => `
-        <label>${{labels[field]}}<select id="filter_${{field}}"></select></label>
-      `).join('');
-    }}
-
-    function seriesByDate(rows) {{
+    function seriesByDate(rows) {
       const map = new Map();
-      for (const row of rows) {{
+      for (const row of rows) {
         const key = normalizeLabel(row.date);
-        const item = map.get(key) || {{ key, ab: 0, total: 0 }};
+        const item = map.get(key) || { key, ab: 0, total: 0 };
         item.ab += eliminationCount(row);
         item.total += Number(row.total_count) || 0;
         map.set(key, item);
-      }}
-      return [...map.values()].sort((a, b) => a.key.localeCompare(b.key, 'sk')).map(item => ({{
+      }
+      return [...map.values()].sort((a, b) => a.key.localeCompare(b.key, 'sk')).map(item => ({
         ...item,
         ratio: item.total ? item.ab / item.total : 0,
-      }}));
-    }}
+      }));
+    }
 
-    function renderTrend(rows) {{
+    function renderTrend(rows, targetId) {
       const data = seriesByDate(rows);
-      const holder = document.getElementById('trendChart');
-      if (!data.length) {{
-        holder.innerHTML = '<div class="empty">Žiadne dáta pre trend.</div>';
+      const holder = document.getElementById(targetId);
+      if (!data.length) {
+        holder.innerHTML = '<div class="empty">No data for trend.</div>';
         return;
-      }}
+      }
 
       const width = 920;
       const height = 340;
@@ -756,131 +666,216 @@ def render_html(payload: dict[str, Any]) -> str:
       const maxY = Math.max(targetRatio, ...data.map(d => d.ratio), 0.8);
       const x = index => left + (data.length === 1 ? innerW / 2 : index * innerW / (data.length - 1));
       const y = value => top + innerH - (value / maxY) * innerH;
-      const points = data.map((d, i) => `${{x(i)}},${{y(d.ratio)}}`).join(' ');
+      const points = data.map((d, i) => `${x(i)},${y(d.ratio)}`).join(' ');
       const targetY = y(targetRatio);
-      const labels = data.map((d, i) => {{
+      const labelsLine = data.map((d, i) => {
         const show = data.length <= 12 || i === 0 || i === data.length - 1 || i % Math.ceil(data.length / 8) === 0;
-        return show ? `<text x="${{x(i)}}" y="${{height - 16}}" text-anchor="middle" font-size="11" fill="#5f6b7a">${{escapeHtml(String(d.key).slice(5))}}</text>` : '';
-      }}).join('');
+        return show ? `<text x="${x(i)}" y="${height - 16}" text-anchor="middle" font-size="11" fill="#5f6b7a">${escapeHtml(String(d.key).slice(5))}</text>` : '';
+      }).join('');
 
       holder.innerHTML = `
-        <svg viewBox="0 0 ${{width}} ${{height}}" role="img" aria-label="Trend AB eliminované">
-          <line x1="${{left}}" y1="${{top}}" x2="${{left}}" y2="${{height - bottom}}" stroke="#d8dee8"/>
-          <line x1="${{left}}" y1="${{height - bottom}}" x2="${{width - right}}" y2="${{height - bottom}}" stroke="#d8dee8"/>
-          <line x1="${{left}}" y1="${{targetY}}" x2="${{width - right}}" y2="${{targetY}}" stroke="#0f9f6e" stroke-dasharray="6 6"/>
-          <text x="${{width - right}}" y="${{targetY - 8}}" text-anchor="end" font-size="12" fill="#0f9f6e">cieľ 75 %</text>
-          <polyline fill="none" stroke="#2563eb" stroke-width="3" points="${{points}}"/>
-          ${{data.map((d, i) => `<circle cx="${{x(i)}}" cy="${{y(d.ratio)}}" r="4" fill="#2563eb"><title>${{escapeHtml(d.key)}}: ${{formatPct(d.ratio)}}</title></circle>`).join('')}}
-          ${{labels}}
+        <svg viewBox="0 0 ${width} ${height}" role="img" aria-label="Trend AB eliminated">
+          <line x1="${left}" y1="${top}" x2="${left}" y2="${height - bottom}" stroke="#d8dee8"/>
+          <line x1="${left}" y1="${height - bottom}" x2="${width - right}" y2="${height - bottom}" stroke="#d8dee8"/>
+          <line x1="${left}" y1="${targetY}" x2="${width - right}" y2="${targetY}" stroke="#0f9f6e" stroke-dasharray="6 6"/>
+          <text x="${width - right}" y="${targetY - 8}" text-anchor="end" font-size="12" fill="#0f9f6e">target 75 %</text>
+          <polyline fill="none" stroke="#2563eb" stroke-width="3" points="${points}"/>
+          ${data.map((d, i) => `<circle cx="${x(i)}" cy="${y(d.ratio)}" r="4" fill="#2563eb"><title>${escapeHtml(d.key)}: ${formatPct(d.ratio)}</title></circle>`).join('')}
+          ${labelsLine}
         </svg>
       `;
-    }}
+    }
 
-    function renderTable(id, rows, key) {{
+    function renderTable(id, rows, key) {
       const map = new Map();
       let totalVolume = 0;
-      for (const row of rows) {{
+      for (const row of rows) {
         totalVolume += Number(row.total_count) || 0;
         const name = normalizeLabel(row[key]);
-        const item = map.get(name) || {{ name, ab: 0, total: 0 }};
+        const item = map.get(name) || { name, ab: 0, total: 0 };
         item.ab += eliminationCount(row);
         item.total += Number(row.total_count) || 0;
         map.set(name, item);
-      }}
-      const data = [...map.values()].map(item => ({{
+      }
+      const data = [...map.values()].map(item => ({
         ...item,
         share: totalVolume ? item.total / totalVolume : 0,
         elimRatio: item.total ? item.ab / item.total : 0,
-      }})).sort((a, b) => b.total - a.total);
+      })).sort((a, b) => b.total - a.total);
       const table = document.getElementById(id);
-      if (!data.length) {{
-        table.innerHTML = '<tbody><tr><td class="empty">Žiadne dáta pre vybraný filter.</td></tr></tbody>';
+      if (!data.length) {
+        table.innerHTML = '<tbody><tr><td class="empty">No data for the selected filter.</td></tr></tbody>';
         return;
-      }}
+      }
       table.innerHTML = `
-        <thead><tr><th>${{labels[key]}}</th><th>SJLs</th><th>Podiel</th><th>Eliminácia</th></tr></thead>
+        <thead><tr><th>${labels[key]}</th><th>SJLs</th><th>Share</th><th>Elimination</th></tr></thead>
         <tbody>
-          ${{data.map(row => `
+          ${data.map(row => `
             <tr>
-              <td>${{escapeHtml(displayLabel(key, row.name))}}</td>
-              <td>${{formatInt(row.total)}}</td>
-              <td>${{formatPct(row.share)}}</td>
-              <td class="ratio ${{ratioClass(row.elimRatio)}}">${{formatPct(row.elimRatio)}}</td>
+              <td>${escapeHtml(displayLabel(key, row.name))}</td>
+              <td>${formatInt(row.total)}</td>
+              <td>${formatPct(row.share)}</td>
+              <td class="ratio ${ratioClass(row.elimRatio)}">${formatPct(row.elimRatio)}</td>
             </tr>
-          `).join('')}}
+          `).join('')}
         </tbody>
       `;
-    }}
+    }
 
-    function renderVolumeTable(id, rows, key) {{
-      const map = new Map();
-      let totalVolume = 0;
-      for (const row of rows) {{
-        totalVolume += Number(row.total_count) || 0;
-        const name = normalizeLabel(row[key]);
-        const item = map.get(name) || {{ name, ab: 0, total: 0 }};
-        item.ab += eliminationCount(row);
-        item.total += Number(row.total_count) || 0;
-        map.set(name, item);
-      }}
-      const data = [...map.values()].map(item => ({{
-        ...item,
-        share: totalVolume ? item.total / totalVolume : 0,
-        elimRatio: item.total ? item.ab / item.total : 0,
-      }})).sort((a, b) => b.total - a.total);
-      const table = document.getElementById(id);
-      if (!data.length) {{
-        table.innerHTML = '<tbody><tr><td class="empty">Žiadne dáta pre vybraný filter.</td></tr></tbody>';
-        return;
-      }}
-      table.innerHTML = `
-        <thead><tr><th>${{labels[key]}}</th><th>SJLs</th><th>Podiel</th><th>Eliminácia</th></tr></thead>
-        <tbody>
-          ${{data.map(row => `
-            <tr>
-              <td>${{escapeHtml(displayLabel(key, row.name))}}</td>
-              <td>${{formatInt(row.total)}}</td>
-              <td>${{formatPct(row.share)}}</td>
-              <td class="ratio ${{ratioClass(row.elimRatio)}}">${{formatPct(row.elimRatio)}}</td>
-            </tr>
-          `).join('')}}
-        </tbody>
+    function renderVolumeTable(id, rows, key) {
+      renderTable(id, rows, key);
+    }
+
+    function renderDashboard(sheetName, index) {
+      const info = (payload.metadata?.sheet_info || []).find(item => item.sheet === sheetName) || {};
+      const sheetId = slugify(sheetName) || `sheet-${index + 1}`;
+      const sheetRows = records.filter(row => normalizeLabel(row.sheet) === normalizeLabel(sheetName));
+      const prefix = `${sheetId}_`;
+      const root = document.createElement('section');
+      root.className = 'dashboard';
+      root.id = `dashboard_${sheetId}`;
+      root.innerHTML = `
+        <div class="dashboard-head">
+          <div>
+            <h2>Dashboard ${index + 1} - ${escapeHtml(sheetName)}</h2>
+            <p>Same conditions as the first dashboard, rendered from the same workbook.</p>
+          </div>
+          <div class="meta" id="${prefix}meta"></div>
+        </div>
+        <section class="filters" id="${prefix}filters"></section>
+        <section class="cards">
+          <div class="card">
+            <span>Elimination share</span>
+            <strong id="${prefix}kpiRatio">0 %</strong>
+            <small>Target: 75 %</small>
+            <div class="goalbar"><div id="${prefix}goalFill"></div></div>
+          </div>
+          <div class="card"><span>Eliminated</span><strong id="${prefix}kpiEliminated">0</strong><small>StoreJobLines</small></div>
+          <div class="card"><span>Selected total</span><strong id="${prefix}kpiSelectedTotal">0</strong><small>StoreJobLines</small></div>
+          <div class="card"><span>Dashboard total</span><strong id="${prefix}kpiTotal">0</strong><small>StoreJobLines</small></div>
+          <div class="card"><span>Gap to target</span><strong id="${prefix}kpiGap">0 b.</strong><small>percentage points</small></div>
+        </section>
+        <section class="grid">
+          <div class="panel">
+            <h2>Trend by day</h2>
+            <div class="chart-wrap" id="${prefix}trendChart"></div>
+          </div>
+          <div class="panel">
+            <h2>Geosize</h2>
+            <div class="table-wrap"><table id="${prefix}geosizeTable"></table></div>
+          </div>
+          <div class="panel">
+            <h2>Packing station</h2>
+            <div class="table-wrap"><table id="${prefix}stationTable"></table></div>
+          </div>
+          <div class="panel">
+            <h2>Packing groups</h2>
+            <div class="table-wrap"><table id="${prefix}groupTable"></table></div>
+          </div>
+          <div class="panel">
+            <h2>Transport detail</h2>
+            <div class="table-wrap"><table id="${prefix}detailTable"></table></div>
+          </div>
+        </section>
       `;
-    }}
+      document.getElementById('dashboards').appendChild(root);
 
-    function renderKpis(rows) {{
-      const summary = aggregate(rows);
-      const globalTotal = aggregate(records).total;
-      document.getElementById('kpiRatio').textContent = formatPct(summary.ratio);
-      document.getElementById('kpiRatio').className = 'ratio ' + ratioClass(summary.ratio);
-      document.getElementById('kpiEliminated').textContent = formatInt(summary.ab);
-      document.getElementById('kpiSelectedTotal').textContent = formatInt(summary.total);
-      document.getElementById('kpiTotal').textContent = formatInt(globalTotal);
-      document.getElementById('kpiGap').textContent = ((summary.ratio - targetRatio) * 100).toLocaleString('sk-SK', {{
-        minimumFractionDigits: 1,
-        maximumFractionDigits: 1,
-      }}) + ' b.';
-      document.getElementById('goalFill').style.width = Math.min(100, (summary.ratio / targetRatio) * 100) + '%';
-    }}
+      const state = {
+        date: 'all',
+        geosize: 'all',
+        station: 'all',
+        packing_group: 'all',
+        doprava: 'all',
+      };
 
-    function render() {{
-      const rows = filteredRecords();
-      renderMeta(rows);
-      renderKpis(rows);
-      ensureFiltersMarkup();
-      renderFilters();
-      renderTrend(rows);
-      renderTable('geosizeTable', rows, 'geosize');
-      renderTable('stationTable', rows, 'station');
-      renderTable('groupTable', rows, 'packing_group');
-      renderVolumeTable('detailTable', rows, 'doprava');
-    }}
+      function filteredRows() {
+        return sheetRows.filter(row => {
+          return Object.entries(state).every(([field, selected]) => {
+            if (selected === 'all') return true;
+            return normalizeLabel(row[field]) === selected;
+          });
+        });
+      }
 
-    render();
+      function renderMeta(rows) {
+        const meta = payload.metadata || {};
+        const totalRows = sheetRows.length;
+        document.getElementById(`${prefix}meta`).innerHTML = [
+          `Source: ${meta.source_file || 'unknown'}`,
+          `Sheet: ${sheetName}`,
+          `Generated: ${meta.generated_at || ''}`,
+          `Rows: ${formatInt(rows.length)} / ${formatInt(totalRows)}`,
+          `Detected: ${info.detected?.doprava ? 'AB + Total + transport' : (info.detected?.ab_eliminated ? 'AB + Total' : 'pivot/flat')}`,
+        ].map(text => `<span class="pill">${text}</span>`).join('');
+      }
+
+      function renderFilters() {
+        const holder = document.getElementById(`${prefix}filters`);
+        holder.innerHTML = Object.keys(labels).map(field => `
+          <label>${labels[field]}<select id="${prefix}filter_${field}"></select></label>
+        `).join('');
+        for (const field of Object.keys(state)) {
+          const select = document.getElementById(`${prefix}filter_${field}`);
+          if (!select) continue;
+          select.innerHTML = allValues(sheetRows, field).map(value => {
+            const label = value === 'all' ? 'All' : displayLabel(field, value);
+            return `<option value="${escapeHtml(value)}">${escapeHtml(label)}</option>`;
+          }).join('');
+          select.value = state[field];
+          select.onchange = event => {
+            state[field] = event.target.value;
+            render();
+          };
+        }
+      }
+
+      function renderKpis(rows) {
+        const summary = aggregate(rows);
+        const dashboardSummary = aggregate(sheetRows);
+        document.getElementById(`${prefix}kpiRatio`).textContent = formatPct(summary.ratio);
+        document.getElementById(`${prefix}kpiRatio`).className = 'ratio ' + ratioClass(summary.ratio);
+        document.getElementById(`${prefix}kpiEliminated`).textContent = formatInt(summary.ab);
+        document.getElementById(`${prefix}kpiSelectedTotal`).textContent = formatInt(summary.total);
+        document.getElementById(`${prefix}kpiTotal`).textContent = formatInt(dashboardSummary.total);
+        document.getElementById(`${prefix}kpiGap`).textContent = ((summary.ratio - targetRatio) * 100).toLocaleString('sk-SK', {
+          minimumFractionDigits: 1,
+          maximumFractionDigits: 1,
+        }) + ' b.';
+        document.getElementById(`${prefix}goalFill`).style.width = Math.min(100, (summary.ratio / targetRatio) * 100) + '%';
+      }
+
+      function render() {
+        const rows = filteredRows();
+        renderMeta(rows);
+        renderKpis(rows);
+        renderFilters();
+        renderTrend(rows, `${prefix}trendChart`);
+        renderTable(`${prefix}geosizeTable`, rows, 'geosize');
+        renderTable(`${prefix}stationTable`, rows, 'station');
+        renderTable(`${prefix}groupTable`, rows, 'packing_group');
+        renderVolumeTable(`${prefix}detailTable`, rows, 'doprava');
+      }
+
+      render();
+    }
+
+    document.getElementById('meta').innerHTML = [
+      `Source: ${payload.metadata?.source_file || 'unknown'}`,
+      `Generated: ${payload.metadata?.generated_at || ''}`,
+      `Dashboards: ${dashboardSheets.length || 0}`,
+    ].map(text => `<span class="pill">${text}</span>`).join('');
+
+    const dashboardsHolder = document.getElementById('dashboards');
+    if (!dashboardSheets.length) {
+      dashboardsHolder.innerHTML = '<div class="empty">No records found in the input workbook.</div>';
+    } else {
+      dashboardSheets.forEach((sheetName, index) => renderDashboard(sheetName, index));
+    }
   </script>
 </body>
 </html>
 """
+    return html.replace("__DATA_JSON__", data_json)
 
 
 def save_dashboard(payload: dict[str, Any]) -> None:
@@ -916,4 +911,3 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
-
