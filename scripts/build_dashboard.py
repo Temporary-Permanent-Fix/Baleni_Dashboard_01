@@ -546,10 +546,54 @@ def render_html(payload: dict[str, Any]) -> str:
     const payload = JSON.parse(document.getElementById('dashboard-data').textContent);
     const records = payload.records || [];
     const targetRatio = payload.metadata?.target_ratio ?? 0.75;
+    const balikovkaTarget = 0.10;
     const sheetOrder = (payload.metadata?.sheet_info || []).map(info => info.sheet).filter(Boolean);
     const dashboardSheets = sheetOrder.length
       ? sheetOrder
       : [...new Set(records.map(row => row.sheet).filter(Boolean))];
+    const balikovkaTransports = {
+      SKLC3: [
+        'DHL',
+        'DPD',
+        'B2B',
+        'AlzaExpres',
+        'ExpressOne',
+        'FoxPost',
+        'Gebruder Weiss',
+        'GO!',
+        'Maďarská pošta',
+        'MyFlexBox',
+        'Post AT',
+        'Pošta',
+        'Pošta Slovensko',
+        'PPL',
+        'SPS',
+        'TopTrans',
+        'WeDo',
+        'Zásilkovna',
+      ],
+      CZLC4: [
+        'DHL',
+        'DPD',
+        'B2B',
+        'AlzaExpres',
+        'ExpressOne',
+        'FoxPost',
+        'Gebruder Weiss',
+        'GO!',
+        'Kurýr',
+        'Maďarská pošta',
+        'MyFlexBox',
+        'Post AT',
+        'Pošta',
+        'Pošta Slovensko',
+        'PPL',
+        'SPS',
+        'TopTrans',
+        'WeDo',
+        'Zásilkovna',
+      ],
+    };
 
     const labels = {
       date: 'Date',
@@ -579,6 +623,12 @@ def render_html(payload: dict[str, Any]) -> str:
       return 'bad';
     }
 
+    function balikovkaClass(value) {
+      if (value <= balikovkaTarget) return 'good';
+      if (value <= 0.12) return 'mid';
+      return 'bad';
+    }
+
     function slugify(value) {
       return String(value ?? '')
         .toLowerCase()
@@ -586,6 +636,14 @@ def render_html(payload: dict[str, Any]) -> str:
         .replace(/[\u0300-\u036f]/g, '')
         .replace(/[^a-z0-9]+/g, '-')
         .replace(/^-+|-+$/g, '');
+    }
+
+    function normalizeText(value) {
+      return String(value ?? '')
+        .normalize('NFKD')
+        .replace(/[\u0300-\u036f]/g, '')
+        .toLowerCase()
+        .trim();
     }
 
     function escapeHtml(value) {
@@ -612,6 +670,19 @@ def render_html(payload: dict[str, Any]) -> str:
       const ab = Number(row.ab_eliminated) || 0;
       const specialGroup = isSpecialEliminationGroup(row) ? (Number(row.total_count) || 0) : 0;
       return ab + specialGroup;
+    }
+
+    function balikovkaTransportSet(sheetName) {
+      return new Set((balikovkaTransports[sheetName] || []).map(normalizeText));
+    }
+
+    function balikovkaCount(rows, sheetName) {
+      const allowed = balikovkaTransportSet(sheetName);
+      if (!allowed.size) return 0;
+      return rows.reduce((sum, row) => {
+        const transport = normalizeText(row.doprava);
+        return sum + (allowed.has(transport) ? (Number(row.total_count) || 0) : 0);
+      }, 0);
     }
 
     function aggregate(rows) {
@@ -750,6 +821,12 @@ def render_html(payload: dict[str, Any]) -> str:
             <small>Target: 75 %</small>
             <div class="goalbar"><div id="${prefix}goalFill"></div></div>
           </div>
+          <div class="card">
+            <span>Balikovka</span>
+            <strong id="${prefix}kpiBalikovka">0 %</strong>
+            <small id="${prefix}kpiBalikovkaCount">0 SJLs</small>
+            <small>Target: &lt; 10 % of SJLs</small>
+          </div>
           <div class="card"><span>Eliminated</span><strong id="${prefix}kpiEliminated">0</strong><small>StoreJobLines</small></div>
           <div class="card"><span>Selected total</span><strong id="${prefix}kpiSelectedTotal">0</strong><small>StoreJobLines</small></div>
           <div class="card"><span>Dashboard total</span><strong id="${prefix}kpiTotal">0</strong><small>StoreJobLines</small></div>
@@ -832,8 +909,13 @@ def render_html(payload: dict[str, Any]) -> str:
       function renderKpis(rows) {
         const summary = aggregate(rows);
         const dashboardSummary = aggregate(sheetRows);
+        const balikovka = balikovkaCount(rows, sheetName);
+        const balikovkaRatio = summary.total ? balikovka / summary.total : 0;
         document.getElementById(`${prefix}kpiRatio`).textContent = formatPct(summary.ratio);
         document.getElementById(`${prefix}kpiRatio`).className = 'ratio ' + ratioClass(summary.ratio);
+        document.getElementById(`${prefix}kpiBalikovka`).textContent = formatPct(balikovkaRatio);
+        document.getElementById(`${prefix}kpiBalikovka`).className = 'ratio ' + balikovkaClass(balikovkaRatio);
+        document.getElementById(`${prefix}kpiBalikovkaCount`).textContent = `${formatInt(balikovka)} SJLs`;
         document.getElementById(`${prefix}kpiEliminated`).textContent = formatInt(summary.ab);
         document.getElementById(`${prefix}kpiSelectedTotal`).textContent = formatInt(summary.total);
         document.getElementById(`${prefix}kpiTotal`).textContent = formatInt(dashboardSummary.total);
