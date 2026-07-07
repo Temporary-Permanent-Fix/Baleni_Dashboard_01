@@ -552,6 +552,27 @@ def render_html(payload: dict[str, Any]) -> str:
       ? sheetOrder
       : [...new Set(records.map(row => row.sheet).filter(Boolean))];
     const balikovkaTransports = {
+      DEFAULT: [
+        'DHL',
+        'DPD',
+        'B2B',
+        'AlzaExpres',
+        'ExpressOne',
+        'FoxPost',
+        'Gebruder Weiss',
+        'GO!',
+        'Maďarská pošta',
+        'MyFlexBox',
+        'Post AT',
+        'PostAT',
+        'Pošta',
+        'Pošta Slovensko',
+        'PPL',
+        'SPS',
+        'TopTrans',
+        'WeDo',
+        'Zásilkovna',
+      ],
       SKLC3: [
         'DHL',
         'DPD',
@@ -673,7 +694,8 @@ def render_html(payload: dict[str, Any]) -> str:
     }
 
     function balikovkaTransportSet(sheetName) {
-      return new Set((balikovkaTransports[sheetName] || []).map(normalizeText));
+      const transports = balikovkaTransports[sheetName] || balikovkaTransports.DEFAULT || [];
+      return new Set(transports.map(normalizeText));
     }
 
     function balikovkaCount(rows, sheetName) {
