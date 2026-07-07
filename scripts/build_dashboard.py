@@ -19,6 +19,7 @@ PROJECT_DIR = Path(__file__).resolve().parents[1]
 INPUT_DIR = PROJECT_DIR / "input"
 OUTPUT_DIR = PROJECT_DIR / "output"
 OUTPUT_FILE = OUTPUT_DIR / "packaging_dashboard.html"
+COMPARISON_OUTPUT_FILE = OUTPUT_DIR / "comparison_dashboard.html"
 
 TARGET_RATIO = 0.75
 
@@ -319,6 +320,60 @@ def load_records(excel_path: Path) -> tuple[list[dict[str, Any]], dict[str, Any]
 
 def build_payload(records: list[dict[str, Any]], metadata: dict[str, Any]) -> dict[str, Any]:
     return {"metadata": metadata, "records": records}
+
+
+def is_special_elimination_group(row: dict[str, Any]) -> bool:
+    return normalize_text(row.get("packing_group")) == "spo pob dist nebalit standard"
+
+
+def elimination_count(row: dict[str, Any]) -> float:
+    ab = safe_number(row.get("ab_eliminated"), 0)
+    special_group = safe_number(row.get("total_count"), 0) if is_special_elimination_group(row) else 0
+    return ab + special_group
+
+
+def build_comparison_summary(records: list[dict[str, Any]]) -> dict[str, Any]:
+    sheet_names = ["SKLC3", "CZLC4"]
+    summaries: list[dict[str, Any]] = []
+    combined_total = sum(safe_number(row.get("total_count"), 0) for row in records)
+    for sheet_name in sheet_names:
+        rows = [row for row in records if normalize_text(row.get("sheet")) == normalize_text(sheet_name)]
+        total = sum(safe_number(row.get("total_count"), 0) for row in rows)
+        eliminated = sum(elimination_count(row) for row in rows)
+        summaries.append(
+            {
+                "sheet": sheet_name,
+                "total": total,
+                "share": (total / combined_total) if combined_total else 0,
+                "rows": len(rows),
+                "eliminated": eliminated,
+                "elimination_share": (eliminated / total) if total else 0,
+            }
+        )
+    summaries.sort(key=lambda item: item["total"], reverse=True)
+    return {
+        "combined_total": combined_total,
+        "summaries": summaries,
+    }
+
+
+def format_int_text(value: Any) -> str:
+    return f"{int(round(safe_number(value, 0))):,}".replace(",", " ")
+
+
+def format_pct_text(value: Any) -> str:
+    return f"{safe_number(value, 0) * 100:.1f}".replace(".", ",") + " %"
+
+
+def escape_html(value: Any) -> str:
+    return (
+        str(value)
+        .replace("&", "&amp;")
+        .replace("<", "&lt;")
+        .replace(">", "&gt;")
+        .replace('"', "&quot;")
+        .replace("'", "&#039;")
+    )
 
 
 def to_json_for_html(payload: dict[str, Any]) -> str:
@@ -987,6 +1042,234 @@ def save_dashboard(payload: dict[str, Any]) -> None:
     OUTPUT_FILE.write_text(render_html(payload), encoding="utf-8")
 
 
+def render_comparison_html(payload: dict[str, Any]) -> str:
+    summary = build_comparison_summary(payload["records"])
+    combined_total = summary["combined_total"]
+    rows_html = []
+    for item in summary["summaries"]:
+        rows_html.append(
+            f"""
+            <article class="card">
+              <span>{item['sheet']}</span>
+              <strong>{format_int_text(item['total'])} SJLs</strong>
+              <small>Podiel z celku: {format_pct_text(item['share'])}</small>
+              <small>Riadkov: {format_int_text(item['rows'])}</small>
+            </article>
+            """
+        )
+
+    table_rows = []
+    for item in summary["summaries"]:
+        table_rows.append(
+            f"""
+            <tr>
+              <td>{escape_html(item['sheet'])}</td>
+              <td>{format_int_text(item['total'])}</td>
+              <td>{format_pct_text(item['share'])}</td>
+              <td>{format_int_text(item['rows'])}</td>
+              <td>{format_pct_text(item['elimination_share'])}</td>
+            </tr>
+            """
+        )
+
+    bar_rows = []
+    for item in summary["summaries"]:
+        bar_rows.append(
+            f"""
+            <div class="share-row">
+              <div class="share-head">
+                <strong>{escape_html(item['sheet'])}</strong>
+                <span>{format_int_text(item['total'])} SJLs · {format_pct_text(item['share'])}</span>
+              </div>
+              <div class="share-bar"><div style="width: {min(100, item['share'] * 100):.2f}%"></div></div>
+            </div>
+            """
+        )
+
+    html = f"""<!doctype html>
+<html lang="sk">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Porovnanie SKLC3 vs CZLC4</title>
+  <style>
+    :root {{
+      --bg: #f5f7fa;
+      --panel: #ffffff;
+      --ink: #15202b;
+      --muted: #5f6b7a;
+      --line: #d8dee8;
+      --blue: #2563eb;
+      --green: #0f9f6e;
+      --shadow: 0 12px 30px rgba(23, 37, 84, .08);
+    }}
+    * {{ box-sizing: border-box; }}
+    body {{
+      margin: 0;
+      background: var(--bg);
+      color: var(--ink);
+      font-family: "Segoe UI", Arial, sans-serif;
+    }}
+    header {{
+      background: linear-gradient(135deg, #111827, #1f2937);
+      color: white;
+      padding: 28px clamp(16px, 3vw, 40px);
+    }}
+    header h1 {{
+      margin: 0 0 6px;
+      font-size: clamp(26px, 3vw, 40px);
+    }}
+    header p {{ margin: 0; color: #cbd5e1; }}
+    main {{
+      width: min(1120px, 100%);
+      margin: 0 auto;
+      padding: 24px clamp(12px, 2.5vw, 32px) 36px;
+    }}
+    .meta {{
+      display: flex;
+      flex-wrap: wrap;
+      gap: 10px;
+      color: var(--muted);
+      font-size: 13px;
+      margin-bottom: 16px;
+    }}
+    .pill {{
+      background: #eaf0f8;
+      border: 1px solid var(--line);
+      border-radius: 999px;
+      padding: 6px 10px;
+    }}
+    .cards {{
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 14px;
+      margin-bottom: 18px;
+    }}
+    .card, .panel {{
+      background: var(--panel);
+      border: 1px solid var(--line);
+      border-radius: 16px;
+      box-shadow: var(--shadow);
+    }}
+    .card {{
+      padding: 18px 20px;
+      display: grid;
+      gap: 6px;
+    }}
+    .card span {{
+      font-size: 12px;
+      font-weight: 700;
+      color: var(--muted);
+      text-transform: uppercase;
+      letter-spacing: .04em;
+    }}
+    .card strong {{
+      font-size: clamp(28px, 4vw, 48px);
+      line-height: 1;
+    }}
+    .card small {{
+      color: var(--muted);
+      font-size: 13px;
+    }}
+    .panel {{
+      padding: 18px 20px 22px;
+      margin-top: 16px;
+    }}
+    .panel h2 {{
+      margin: 0 0 16px;
+      font-size: 20px;
+    }}
+    .share-row + .share-row {{ margin-top: 16px; }}
+    .share-head {{
+      display: flex;
+      justify-content: space-between;
+      gap: 12px;
+      margin-bottom: 8px;
+      color: var(--ink);
+    }}
+    .share-head span {{ color: var(--muted); }}
+    .share-bar {{
+      height: 16px;
+      background: #e7edf5;
+      border-radius: 999px;
+      overflow: hidden;
+    }}
+    .share-bar div {{
+      height: 100%;
+      border-radius: 999px;
+      background: linear-gradient(90deg, var(--blue), #7c3aed);
+    }}
+    table {{
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 14px;
+    }}
+    th, td {{
+      text-align: left;
+      padding: 12px 0;
+      border-bottom: 1px solid var(--line);
+    }}
+    th {{
+      color: var(--muted);
+      font-size: 12px;
+      text-transform: uppercase;
+      letter-spacing: .04em;
+    }}
+    .ratio.good {{ color: var(--green); font-weight: 700; }}
+    .ratio.mid {{ color: #d97706; font-weight: 700; }}
+    .ratio.bad {{ color: #dc2626; font-weight: 700; }}
+    @media (max-width: 860px) {{
+      .cards {{ grid-template-columns: 1fr; }}
+    }}
+  </style>
+</head>
+<body>
+  <header>
+    <h1>Porovnanie SKLC3 vs CZLC4</h1>
+    <p>Objem SJLs a podiel každej záložky z celkového objemu.</p>
+  </header>
+  <main>
+    <div class="meta">
+      <span class="pill">Source: {escape_html(payload["metadata"].get("source_file", "unknown"))}</span>
+      <span class="pill">Generated: {escape_html(payload["metadata"].get("generated_at", ""))}</span>
+      <span class="pill">Combined total: {format_int_text(combined_total)} SJLs</span>
+      <span class="pill">Sheets: 2</span>
+    </div>
+    <section class="cards">
+      {''.join(rows_html)}
+    </section>
+    <section class="panel">
+      <h2>Podiel na celku</h2>
+      {''.join(bar_rows)}
+    </section>
+    <section class="panel">
+      <h2>Prehľad</h2>
+      <table>
+        <thead>
+          <tr>
+            <th>Sheet</th>
+            <th>Volume</th>
+            <th>Share</th>
+            <th>Rows</th>
+            <th>Elimination share</th>
+          </tr>
+        </thead>
+        <tbody>
+          {''.join(table_rows)}
+        </tbody>
+      </table>
+    </section>
+  </main>
+</body>
+</html>"""
+    return html
+
+
+def save_comparison_dashboard(payload: dict[str, Any]) -> None:
+    OUTPUT_DIR.mkdir(exist_ok=True)
+    COMPARISON_OUTPUT_FILE.write_text(render_comparison_html(payload), encoding="utf-8")
+
+
 def main() -> None:
     print("Startujem tvorbu dashboardu...")
     try:
@@ -1008,9 +1291,11 @@ def main() -> None:
 
     payload = build_payload(records, metadata)
     save_dashboard(payload)
+    save_comparison_dashboard(payload)
 
     print("Hotovo.")
     print(f"Dashboard je ulozeny tu: {OUTPUT_FILE}")
+    print(f"Porovnávací dashboard je ulozený tu: {COMPARISON_OUTPUT_FILE}")
 
 
 if __name__ == "__main__":

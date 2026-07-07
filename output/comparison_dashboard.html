@@ -1,0 +1,222 @@
+<!doctype html>
+<html lang="sk">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Porovnanie SKLC3 vs CZLC4</title>
+  <style>
+    :root {
+      --bg: #f5f7fa;
+      --panel: #ffffff;
+      --ink: #15202b;
+      --muted: #5f6b7a;
+      --line: #d8dee8;
+      --blue: #2563eb;
+      --green: #0f9f6e;
+      --shadow: 0 12px 30px rgba(23, 37, 84, .08);
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      background: var(--bg);
+      color: var(--ink);
+      font-family: "Segoe UI", Arial, sans-serif;
+    }
+    header {
+      background: linear-gradient(135deg, #111827, #1f2937);
+      color: white;
+      padding: 28px clamp(16px, 3vw, 40px);
+    }
+    header h1 {
+      margin: 0 0 6px;
+      font-size: clamp(26px, 3vw, 40px);
+    }
+    header p { margin: 0; color: #cbd5e1; }
+    main {
+      width: min(1120px, 100%);
+      margin: 0 auto;
+      padding: 24px clamp(12px, 2.5vw, 32px) 36px;
+    }
+    .meta {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 10px;
+      color: var(--muted);
+      font-size: 13px;
+      margin-bottom: 16px;
+    }
+    .pill {
+      background: #eaf0f8;
+      border: 1px solid var(--line);
+      border-radius: 999px;
+      padding: 6px 10px;
+    }
+    .cards {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 14px;
+      margin-bottom: 18px;
+    }
+    .card, .panel {
+      background: var(--panel);
+      border: 1px solid var(--line);
+      border-radius: 16px;
+      box-shadow: var(--shadow);
+    }
+    .card {
+      padding: 18px 20px;
+      display: grid;
+      gap: 6px;
+    }
+    .card span {
+      font-size: 12px;
+      font-weight: 700;
+      color: var(--muted);
+      text-transform: uppercase;
+      letter-spacing: .04em;
+    }
+    .card strong {
+      font-size: clamp(28px, 4vw, 48px);
+      line-height: 1;
+    }
+    .card small {
+      color: var(--muted);
+      font-size: 13px;
+    }
+    .panel {
+      padding: 18px 20px 22px;
+      margin-top: 16px;
+    }
+    .panel h2 {
+      margin: 0 0 16px;
+      font-size: 20px;
+    }
+    .share-row + .share-row { margin-top: 16px; }
+    .share-head {
+      display: flex;
+      justify-content: space-between;
+      gap: 12px;
+      margin-bottom: 8px;
+      color: var(--ink);
+    }
+    .share-head span { color: var(--muted); }
+    .share-bar {
+      height: 16px;
+      background: #e7edf5;
+      border-radius: 999px;
+      overflow: hidden;
+    }
+    .share-bar div {
+      height: 100%;
+      border-radius: 999px;
+      background: linear-gradient(90deg, var(--blue), #7c3aed);
+    }
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 14px;
+    }
+    th, td {
+      text-align: left;
+      padding: 12px 0;
+      border-bottom: 1px solid var(--line);
+    }
+    th {
+      color: var(--muted);
+      font-size: 12px;
+      text-transform: uppercase;
+      letter-spacing: .04em;
+    }
+    .ratio.good { color: var(--green); font-weight: 700; }
+    .ratio.mid { color: #d97706; font-weight: 700; }
+    .ratio.bad { color: #dc2626; font-weight: 700; }
+    @media (max-width: 860px) {
+      .cards { grid-template-columns: 1fr; }
+    }
+  </style>
+</head>
+<body>
+  <header>
+    <h1>Porovnanie SKLC3 vs CZLC4</h1>
+    <p>Objem SJLs a podiel každej záložky z celkového objemu.</p>
+  </header>
+  <main>
+    <div class="meta">
+      <span class="pill">Source: dashboard-Data_pro _balení dashboard_6_2026-1783413715000000000.xlsx</span>
+      <span class="pill">Generated: 2026-07-07 10:52:28</span>
+      <span class="pill">Combined total: 20 406 063 SJLs</span>
+      <span class="pill">Sheets: 2</span>
+    </div>
+    <section class="cards">
+      
+            <article class="card">
+              <span>CZLC4</span>
+              <strong>14 644 499 SJLs</strong>
+              <small>Podiel z celku: 71,8 %</small>
+              <small>Riadkov: 15 190</small>
+            </article>
+            
+            <article class="card">
+              <span>SKLC3</span>
+              <strong>5 761 564 SJLs</strong>
+              <small>Podiel z celku: 28,2 %</small>
+              <small>Riadkov: 12 796</small>
+            </article>
+            
+    </section>
+    <section class="panel">
+      <h2>Podiel na celku</h2>
+      
+            <div class="share-row">
+              <div class="share-head">
+                <strong>CZLC4</strong>
+                <span>14 644 499 SJLs · 71,8 %</span>
+              </div>
+              <div class="share-bar"><div style="width: 71.77%"></div></div>
+            </div>
+            
+            <div class="share-row">
+              <div class="share-head">
+                <strong>SKLC3</strong>
+                <span>5 761 564 SJLs · 28,2 %</span>
+              </div>
+              <div class="share-bar"><div style="width: 28.23%"></div></div>
+            </div>
+            
+    </section>
+    <section class="panel">
+      <h2>Prehľad</h2>
+      <table>
+        <thead>
+          <tr>
+            <th>Sheet</th>
+            <th>Volume</th>
+            <th>Share</th>
+            <th>Rows</th>
+            <th>Elimination share</th>
+          </tr>
+        </thead>
+        <tbody>
+          
+            <tr>
+              <td>CZLC4</td>
+              <td>14 644 499</td>
+              <td>71,8 %</td>
+              <td>15 190</td>
+              <td>77,1 %</td>
+            </tr>
+            
+            <tr>
+              <td>SKLC3</td>
+              <td>5 761 564</td>
+              <td>28,2 %</td>
+              <td>12 796</td>
+              <td>66,9 %</td>
+            </tr>
+            
+        </tbody>
+      </table>
+    </section>
+  </main>
+</body>
+</html>
