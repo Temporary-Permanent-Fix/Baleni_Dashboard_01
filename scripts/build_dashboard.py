@@ -12,6 +12,8 @@ import unicodedata
 from datetime import datetime
 from pathlib import Path
 from typing import Any
+from urllib.parse import urlparse
+from urllib.request import Request, urlopen
 
 import pandas as pd
 from openpyxl import load_workbook
@@ -83,6 +85,59 @@ def copy_excel_for_reading(excel_path: Path) -> Path:
     return copy_path
 
 
+def get_streamlit_excel_source() -> str | None:
+    source = os.environ.get("EXCEL_SOURCE_URL", "").strip()
+    if not source and is_streamlit_runtime():
+        try:
+            import streamlit as st
+
+            source = str(st.secrets.get("EXCEL_SOURCE_URL", "")).strip()
+        except Exception:
+            source = ""
+    return source or None
+
+
+def download_excel_to_temp(source_url: str) -> Path:
+    parsed = urlparse(source_url)
+    suffix = Path(parsed.path).suffix.lower()
+    if suffix not in {".xlsx", ".xls", ".xlsm"}:
+        suffix = ".xlsx"
+
+    temp_dir = Path(tempfile.gettempdir())
+    copy_path = temp_dir / f"dashboard-remote-{abs(hash(source_url))}{suffix}"
+    request = Request(source_url, headers={"User-Agent": "Mozilla/5.0"})
+    with urlopen(request, timeout=60) as response:
+        data = response.read()
+    copy_path.write_bytes(data)
+    return copy_path
+
+
+def build_payload_from_excel(excel_path: Path) -> dict[str, Any]:
+    readable_copy = copy_excel_for_reading(excel_path)
+    try:
+        records, metadata = load_records(readable_copy)
+    finally:
+        try:
+            readable_copy.unlink(missing_ok=True)
+        except OSError:
+            pass
+    return build_payload(records, metadata)
+
+
+def build_payload_from_source(source_url: str) -> dict[str, Any]:
+    readable_copy = download_excel_to_temp(source_url)
+    try:
+        records, metadata = load_records(readable_copy)
+    finally:
+        try:
+            readable_copy.unlink(missing_ok=True)
+        except OSError:
+            pass
+    payload = build_payload(records, metadata)
+    payload["metadata"]["source_url"] = source_url
+    return payload
+
+
 def is_streamlit_runtime() -> bool:
     try:
         from streamlit.runtime.scriptrunner import get_script_run_ctx
@@ -92,8 +147,22 @@ def is_streamlit_runtime() -> bool:
 
 
 def render_streamlit_dashboard() -> None:
-    import html as html_lib
     import streamlit as st
+    source_url = get_streamlit_excel_source()
+
+    st.set_page_config(page_title="Balení dashboard", layout="wide")
+    if source_url:
+        st.info(
+            "Streamlit číta dáta priamo z externého Excelu. n8n má len aktualizovať "
+            "súbor na stabilnej URL alebo v secrese `EXCEL_SOURCE_URL`."
+        )
+        payload = build_payload_from_source(source_url)
+        st.components.v1.html(render_html(payload), height=1600, scrolling=True)
+        st.caption(
+            f"Zdroj: {payload['metadata'].get('source_file', 'unknown')} | "
+            f"URL: {source_url}"
+        )
+        return
 
     docs_dir = PROJECT_DIR / "docs"
     parent_file = docs_dir / "index.html"
@@ -106,6 +175,8 @@ def render_streamlit_dashboard() -> None:
         st.error("Nenasiel som docs/vyvoj-balenia.html. Najprv obnov snapshot detailu.")
         return
 
+    import html as html_lib
+
     parent_html = parent_file.read_text(encoding="utf-8")
     child_html = child_file.read_text(encoding="utf-8")
     rendered_html = parent_html.replace(
@@ -114,10 +185,9 @@ def render_streamlit_dashboard() -> None:
         1,
     )
 
-    st.set_page_config(page_title="Balení dashboard", layout="wide")
     st.info(
-        "Toto je nadradená vrstva Balení dashboard. Rozbaľ sekciu Vývoj balenia, "
-        "ak chceš vidieť aktuálny detailný report."
+        "Používam lokálny snapshot z docs/. Ak nastavíš `EXCEL_SOURCE_URL`, appka "
+        "prejde na živé dáta z Excelu."
     )
     st.components.v1.html(rendered_html, height=1600, scrolling=True)
     st.caption("Vývoj balenia je uložený ako stabilný snapshot a dá sa sem pridávať ďalšími kartami.")
@@ -1327,16 +1397,7 @@ def main() -> None:
         sys.exit(1)
 
     print(f"Nacitavam subor: {excel_path.name}")
-    readable_copy = copy_excel_for_reading(excel_path)
-    try:
-        records, metadata = load_records(readable_copy)
-    finally:
-        try:
-            readable_copy.unlink(missing_ok=True)
-        except OSError:
-            pass
-
-    payload = build_payload(records, metadata)
+    payload = build_payload_from_excel(excel_path)
     save_dashboard(payload)
     save_comparison_dashboard(payload)
 

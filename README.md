@@ -112,6 +112,30 @@ Na to sluzi aj skript:
 powershell -NoProfile -ExecutionPolicy Bypass -File scripts/publish_to_docs.ps1
 ```
 
+## Streamlit a n8n
+
+Ak chces, aby sa data v Streamlit appke menili automaticky po kazdom update Excelu,
+nenacitaj ich z `docs/` snapshotu. Namiesto toho nastav v Streamlit Cloud secrets:
+
+```toml
+EXCEL_SOURCE_URL = "https://.../tvoj-staly-excel.xlsx"
+```
+
+Potom n8n workflow spravi iba toto:
+
+1. nahra novy Excel na tu istu stabilnu URL
+2. alebo prepis ten isty subor v GitHub repozitari a pushni commit
+3. Streamlit appka si pri otvoreni nacita aktualnu verziu z `EXCEL_SOURCE_URL`
+
+Pre lokalne testovanie mozes dat:
+
+```powershell
+$env:EXCEL_SOURCE_URL="https://.../tvoj-staly-excel.xlsx"
+streamlit run scripts/build_dashboard.py
+```
+
+Ak `EXCEL_SOURCE_URL` nie je nastavene, appka fallbackne pouzije lokalny snapshot z `docs/`.
+
 ## Doplnkovy skript
 
 Povodny technicky prieskum Excelu je stale k dispozicii:
