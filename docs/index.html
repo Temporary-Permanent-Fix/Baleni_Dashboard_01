@@ -1,0 +1,288 @@
+<!doctype html>
+<html lang="sk">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Balení dashboard</title>
+  <style>
+    :root {
+      --bg: #0b1220;
+      --bg-soft: #101827;
+      --panel: rgba(15, 23, 42, 0.78);
+      --panel-strong: #ffffff;
+      --ink: #e5eefc;
+      --ink-strong: #122033;
+      --muted: #9bb0cc;
+      --line: rgba(148, 163, 184, 0.22);
+      --accent: #38bdf8;
+      --accent-2: #10b981;
+      --shadow: 0 20px 50px rgba(2, 6, 23, 0.34);
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      color: var(--ink);
+      font-family: "Segoe UI", Arial, sans-serif;
+      background:
+        radial-gradient(circle at top left, rgba(56, 189, 248, 0.16), transparent 28%),
+        radial-gradient(circle at top right, rgba(16, 185, 129, 0.16), transparent 24%),
+        linear-gradient(180deg, var(--bg) 0%, #0f172a 52%, #0b1220 100%);
+    }
+    header {
+      position: relative;
+      overflow: hidden;
+      padding: 30px clamp(16px, 3vw, 44px) 24px;
+      border-bottom: 1px solid var(--line);
+    }
+    header::after {
+      content: "";
+      position: absolute;
+      inset: auto -10% -55% auto;
+      width: 360px;
+      height: 360px;
+      border-radius: 50%;
+      background: radial-gradient(circle, rgba(255,255,255,0.16), transparent 70%);
+      pointer-events: none;
+    }
+    .eyebrow {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      padding: 7px 12px;
+      border: 1px solid rgba(148, 163, 184, 0.25);
+      border-radius: 999px;
+      background: rgba(255, 255, 255, 0.06);
+      color: var(--muted);
+      font-size: 13px;
+      backdrop-filter: blur(10px);
+    }
+    header h1 {
+      margin: 14px 0 10px;
+      font-size: clamp(30px, 4vw, 54px);
+      line-height: 1.05;
+      letter-spacing: -0.04em;
+    }
+    header p {
+      margin: 0;
+      max-width: 78ch;
+      color: rgba(229, 238, 252, 0.84);
+      font-size: 16px;
+      line-height: 1.55;
+    }
+    main {
+      width: min(1440px, 100%);
+      margin: 0 auto;
+      padding: 24px clamp(12px, 2.5vw, 32px) 40px;
+    }
+    .meta {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 10px;
+      margin-bottom: 18px;
+    }
+    .pill {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      border: 1px solid var(--line);
+      border-radius: 999px;
+      padding: 8px 12px;
+      background: rgba(255, 255, 255, 0.06);
+      color: var(--muted);
+      font-size: 13px;
+      backdrop-filter: blur(8px);
+    }
+    .grid {
+      display: grid;
+      gap: 16px;
+      grid-template-columns: repeat(12, minmax(0, 1fr));
+      align-items: start;
+    }
+    .card {
+      grid-column: span 4;
+      display: grid;
+      gap: 10px;
+      padding: 18px 18px 16px;
+      border: 1px solid var(--line);
+      border-radius: 18px;
+      background: var(--panel);
+      box-shadow: var(--shadow);
+      min-height: 140px;
+    }
+    .card h2 {
+      margin: 0;
+      font-size: 18px;
+      letter-spacing: -0.02em;
+    }
+    .card p {
+      margin: 0;
+      color: rgba(229, 238, 252, 0.74);
+      font-size: 14px;
+      line-height: 1.5;
+    }
+    .card .tag {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      width: fit-content;
+      padding: 5px 10px;
+      border-radius: 999px;
+      background: rgba(56, 189, 248, 0.12);
+      color: #a5f3fc;
+      font-size: 12px;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+    }
+    .card.placeholder {
+      opacity: 0.7;
+      border-style: dashed;
+    }
+    details.dashboard-shell {
+      grid-column: 1 / -1;
+      border: 1px solid rgba(148, 163, 184, 0.26);
+      border-radius: 22px;
+      background: rgba(15, 23, 42, 0.78);
+      box-shadow: var(--shadow);
+      overflow: clip;
+    }
+    details.dashboard-shell > summary {
+      list-style: none;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 16px;
+      padding: 18px 20px;
+      user-select: none;
+      border-bottom: 1px solid transparent;
+    }
+    details.dashboard-shell > summary::-webkit-details-marker { display: none; }
+    .summary-copy {
+      display: grid;
+      gap: 4px;
+    }
+    .summary-copy strong {
+      font-size: 18px;
+      letter-spacing: -0.02em;
+    }
+    .summary-copy span {
+      color: var(--muted);
+      font-size: 13px;
+    }
+    .summary-action {
+      display: inline-flex;
+      align-items: center;
+      gap: 10px;
+      padding: 10px 14px;
+      border-radius: 999px;
+      border: 1px solid rgba(56, 189, 248, 0.28);
+      background: rgba(56, 189, 248, 0.1);
+      color: #d5f9ff;
+      font-size: 13px;
+      font-weight: 700;
+      white-space: nowrap;
+    }
+    .summary-action::after {
+      content: "▾";
+      font-size: 14px;
+      transition: transform 0.2s ease;
+    }
+    details[open] .summary-action::after {
+      transform: rotate(180deg);
+    }
+    .dashboard-frame-wrap {
+      background: linear-gradient(180deg, rgba(255,255,255,0.02), rgba(255,255,255,0));
+      padding: 0 16px 16px;
+    }
+    .dashboard-frame {
+      width: 100%;
+      min-height: min(1100px, 86vh);
+      border: 0;
+      border-radius: 18px;
+      background: #ffffff;
+      box-shadow: inset 0 0 0 1px rgba(148, 163, 184, 0.16);
+    }
+    .footer-note {
+      margin-top: 18px;
+      color: var(--muted);
+      font-size: 13px;
+      line-height: 1.5;
+    }
+    @media (max-width: 1100px) {
+      .card { grid-column: span 6; }
+    }
+    @media (max-width: 720px) {
+      .card { grid-column: 1 / -1; }
+      details.dashboard-shell > summary {
+        flex-direction: column;
+        align-items: flex-start;
+      }
+      .dashboard-frame {
+        min-height: 1050px;
+      }
+    }
+  </style>
+</head>
+<body>
+  <header>
+    <div class="eyebrow">Balení dashboard</div>
+    <h1>Jeden stabilný vstupný bod pre všetky balíkové dashboardy</h1>
+    <p>
+      Táto stránka je nadradená vrstva. Tu budeš pridávať ďalšie karty, zatiaľ čo
+      <strong>Vývoj balenia</strong> zostane ako samostatný, rozbaľovací blok s vlastným detailom.
+    </p>
+  </header>
+  <main>
+    <div class="meta">
+      <span class="pill">Vrstva: Balení dashboard</span>
+      <span class="pill">Detail: Vývoj balenia</span>
+      <span class="pill">Aktuálna verzia uložená ako snapshot</span>
+    </div>
+
+    <section class="grid" aria-label="Dashboard cards">
+      <article class="card">
+        <span class="tag">Vývoj balenia</span>
+        <h2>Otvor si detailný dashboard</h2>
+        <p>Po kliknutí sa rozbalí plná analytická vrstva so všetkými KPI, trendom a filtrami.</p>
+      </article>
+
+      <article class="card placeholder">
+        <span class="tag">Budúca karta</span>
+        <h2>Voľné miesto pre ďalší blok</h2>
+        <p>Sem sa neskôr pridá ďalší dashboard alebo metrika bez zásahu do existujúceho detailu.</p>
+      </article>
+
+      <article class="card placeholder">
+        <span class="tag">Budúca karta</span>
+        <h2>Ďalšia stabilná karta</h2>
+        <p>Architektúra je pripravená na viac samostatných kariet v rovnakej vrstve.</p>
+      </article>
+
+      <details class="dashboard-shell" id="vyvoj-balenia">
+        <summary>
+          <div class="summary-copy">
+            <strong>Vývoj balenia</strong>
+            <span>Klikni a otvorí sa plný dashboard v stabilnej sekcii.</span>
+          </div>
+          <div class="summary-action">Rozbaliť detail</div>
+        </summary>
+        <div class="dashboard-frame-wrap">
+          <iframe
+            class="dashboard-frame"
+            src="vyvoj-balenia.html"
+            title="Vývoj balenia dashboard"
+            loading="lazy"
+          ></iframe>
+        </div>
+      </details>
+    </section>
+
+    <div class="footer-note">
+      Ak chceš časom pridať ďalšie karty, vlož ich do tejto stránky nad alebo pod blok
+      <strong>Vývoj balenia</strong>. Samotný detail ostáva oddelený v súbore
+      <code>vyvoj-balenia.html</code>.
+    </div>
+  </main>
+</body>
+</html>

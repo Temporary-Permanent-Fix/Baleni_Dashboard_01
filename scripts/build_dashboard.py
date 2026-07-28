@@ -2,10 +2,12 @@
 
 import json
 import math
+import os
 import re
 import subprocess
 import sys
 import tempfile
+import shutil
 import unicodedata
 from datetime import datetime
 from pathlib import Path
@@ -61,19 +63,64 @@ def find_excel_file() -> Path:
 def copy_excel_for_reading(excel_path: Path) -> Path:
     temp_dir = Path(tempfile.gettempdir())
     copy_path = temp_dir / f"dashboard-{excel_path.stem}-{excel_path.stat().st_mtime_ns}.xlsx"
-    result = subprocess.run(
-        [
-            "powershell",
-            "-NoProfile",
-            "-Command",
-            f"Copy-Item -LiteralPath '{str(excel_path)}' -Destination '{str(copy_path)}' -Force",
-        ],
-        capture_output=True,
-        text=True,
-    )
-    if result.returncode != 0:
-        raise PermissionError(result.stderr.strip() or result.stdout.strip())
+    try:
+        shutil.copy2(excel_path, copy_path)
+    except (PermissionError, OSError):
+        if os.name != "nt":
+            raise
+        result = subprocess.run(
+            [
+                "powershell",
+                "-NoProfile",
+                "-Command",
+                f"Copy-Item -LiteralPath '{str(excel_path)}' -Destination '{str(copy_path)}' -Force",
+            ],
+            capture_output=True,
+            text=True,
+        )
+        if result.returncode != 0:
+            raise PermissionError(result.stderr.strip() or result.stdout.strip())
     return copy_path
+
+
+def is_streamlit_runtime() -> bool:
+    try:
+        from streamlit.runtime.scriptrunner import get_script_run_ctx
+    except Exception:
+        return False
+    return get_script_run_ctx() is not None
+
+
+def render_streamlit_dashboard() -> None:
+    import html as html_lib
+    import streamlit as st
+
+    docs_dir = PROJECT_DIR / "docs"
+    parent_file = docs_dir / "index.html"
+    child_file = docs_dir / "vyvoj-balenia.html"
+
+    if not parent_file.exists():
+        st.error("Nenasiel som docs/index.html. Najprv vytvor nadradenu stranku.")
+        return
+    if not child_file.exists():
+        st.error("Nenasiel som docs/vyvoj-balenia.html. Najprv obnov snapshot detailu.")
+        return
+
+    parent_html = parent_file.read_text(encoding="utf-8")
+    child_html = child_file.read_text(encoding="utf-8")
+    rendered_html = parent_html.replace(
+        'src="vyvoj-balenia.html"',
+        f'srcdoc="{html_lib.escape(child_html, quote=True)}"',
+        1,
+    )
+
+    st.set_page_config(page_title="Balení dashboard", layout="wide")
+    st.info(
+        "Toto je nadradená vrstva Balení dashboard. Rozbaľ sekciu Vývoj balenia, "
+        "ak chceš vidieť aktuálny detailný report."
+    )
+    st.components.v1.html(rendered_html, height=1600, scrolling=True)
+    st.caption("Vývoj balenia je uložený ako stabilný snapshot a dá sa sem pridávať ďalšími kartami.")
 
 
 def infer_columns(columns: list[Any]) -> dict[str, str | None]:
@@ -1299,4 +1346,7 @@ def main() -> None:
 
 
 if __name__ == "__main__":
-    main()
+    if is_streamlit_runtime():
+        render_streamlit_dashboard()
+    else:
+        main()

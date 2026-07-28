@@ -64,6 +64,54 @@ output/packaging_dashboard.html
 
 Tento subor otvor v prehliadaci. Obsahuje uz vlozene data, takze nepotrebuje server.
 
+Pre input `balikovka_den_CZLC4.xlsx` je k dispozicii aj specialny dashboard:
+
+```text
+output/balikovka_den_CZLC4_dashboard.html
+```
+
+Vygenerujes ho cez:
+
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass -File scripts/build_balikovka_dashboard.ps1
+```
+
+## GitHub Pages
+
+Ak chces, aby si dashboard vedel otvorit cez verejny link, pouzi GitHub Pages.
+
+Hlavna vstupna stranka je teraz `Balení dashboard` a detailny dashboard `Vývoj balenia`
+sa otvara ako rozbaľovací blok. Tato vrstva je pripravena na pridavanie dalsich kariet bez
+zasahu do detailu.
+
+Najjednoduchsie je publikovat obsah priecinka `docs/`, ktory uz teraz obsahuje samostatny `index.html`.
+
+Kroky pre zaciatocnika:
+
+1. V GitHube si vytvor novy repository.
+2. Nahraj do neho tento projekt.
+3. V GitHube otvor `Settings`.
+4. V lavom menu klikni na `Pages`.
+5. V casti `Build and deployment` zvol `Deploy from a branch`.
+6. Ako branch vyber `main` a ako folder vyber `/docs`.
+7. Uloz nastavenie a pockaj, kym GitHub Pages spravi deploy.
+8. Po deployi dostanes link typu `https://tvoje-meno.github.io/nazov-repa/`.
+
+V tomto repozitari je pre Pages pripravene:
+
+- `docs/index.html` - nadradena vrstva `Balení dashboard`
+- `docs/vyvoj-balenia.html` - stabilny snapshot detailu `Vývoj balenia`
+- `docs/.nojekyll` - vypnutie Jekyll spracovania
+
+Ak budes dashboard aktualizovat, po novom build-e len prepises `docs/vyvoj-balenia.html`
+novym exportom z `output/packaging_dashboard.html`.
+
+Na to sluzi aj skript:
+
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass -File scripts/publish_to_docs.ps1
+```
+
 ## Doplnkovy skript
 
 Povodny technicky prieskum Excelu je stale k dispozicii:
