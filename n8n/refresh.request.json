@@ -1,0 +1,6 @@
+{
+  "requested_at": "2026-07-28T13:55:59.899+02:00",
+  "requested_by": "n8n",
+  "action": "refresh-and-push",
+  "note": "Daily trigger for local watcher"
+}
