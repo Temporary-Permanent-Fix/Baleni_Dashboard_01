@@ -522,12 +522,18 @@ def build_daily_kpi_summary(records: list[dict[str, Any]]) -> dict[str, Any]:
         sheet_rows.append(
             {
                 "sheet": sheet_name,
+                "total_count": total_count,
+                "eliminated_count": eliminated_count,
                 "ratio": (eliminated_count / total_count) if total_count else None,
             }
         )
         ratio = sheet_rows[-1]["ratio"]
         ratio_text = "bez dat" if ratio is None else f"{ratio * 100:.1f}".replace(".", ",") + " %"
-        mail_lines.append(f"{sheet_name}: {ratio_text} eliminace z geosize = SPO, doprava = alzabox")
+        mail_lines.append(
+            f"{sheet_name}: {ratio_text} "
+            f"({format_int_text(eliminated_count)} / {format_int_text(total_count)}) "
+            f"eliminace z geosize = SPO, doprava = alzabox"
+        )
     return {
         "target_day": target_day,
         "generated_at": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
