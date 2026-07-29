@@ -505,7 +505,15 @@ def build_comparison_summary(records: list[dict[str, Any]]) -> dict[str, Any]:
 
 
 def build_daily_kpi_summary(records: list[dict[str, Any]]) -> dict[str, Any]:
-    target_day = (datetime.now().date() - pd.Timedelta(days=1)).isoformat()
+    available_days = sorted(
+        {
+            str(row.get("date"))
+            for row in records
+            if str(row.get("date")) and str(row.get("date")) != "Nezadane"
+        }
+    )
+    fallback_day = (datetime.now().date() - pd.Timedelta(days=1)).isoformat()
+    target_day = available_days[-1] if available_days else fallback_day
     daily_records = [row for row in records if str(row.get("date")) == target_day]
     sheet_rows: list[dict[str, Any]] = []
     mail_lines: list[str] = []
