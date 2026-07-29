@@ -1,6 +1,7 @@
 ﻿from __future__ import annotations
 
 import json
+import argparse
 import math
 import os
 import re
@@ -24,6 +25,7 @@ INPUT_DIR = PROJECT_DIR / "input"
 OUTPUT_DIR = PROJECT_DIR / "output"
 OUTPUT_FILE = OUTPUT_DIR / "packaging_dashboard.html"
 COMPARISON_OUTPUT_FILE = OUTPUT_DIR / "comparison_dashboard.html"
+DAILY_KPI_FILE = OUTPUT_DIR / "daily_kpi.json"
 
 TARGET_RATIO = 0.75
 
@@ -60,6 +62,27 @@ def find_excel_file() -> Path:
             "V zlozke input nie je ziaden Excel subor. Vloz tam .xlsx, .xls alebo .xlsm subor."
         )
     return sorted(excel_files, key=lambda path: path.stat().st_mtime, reverse=True)[0]
+
+
+def resolve_excel_input_path(explicit_path: str | None = None) -> Path:
+    if explicit_path:
+        path = Path(explicit_path).expanduser()
+        if not path.is_absolute():
+            path = (PROJECT_DIR / path).resolve()
+        if not path.exists():
+            raise FileNotFoundError(f"Excel subor neexistuje: {path}")
+        return path
+
+    env_path = os.environ.get("EXCEL_INPUT_PATH", "").strip()
+    if env_path:
+        path = Path(env_path).expanduser()
+        if not path.is_absolute():
+            path = (PROJECT_DIR / path).resolve()
+        if not path.exists():
+            raise FileNotFoundError(f"Excel subor neexistuje: {path}")
+        return path
+
+    return find_excel_file()
 
 
 def copy_excel_for_reading(excel_path: Path) -> Path:
@@ -156,13 +179,20 @@ def render_streamlit_dashboard() -> None:
             "Streamlit číta dáta priamo z externého Excelu. n8n má len aktualizovať "
             "súbor na stabilnej URL alebo v secrese `EXCEL_SOURCE_URL`."
         )
-        payload = build_payload_from_source(source_url)
-        st.components.v1.html(render_html(payload), height=1600, scrolling=True)
-        st.caption(
-            f"Zdroj: {payload['metadata'].get('source_file', 'unknown')} | "
-            f"URL: {source_url}"
-        )
-        return
+        try:
+            payload = build_payload_from_source(source_url)
+        except Exception as error:
+            st.warning(
+                "Live Excel sa nepodarilo načítať, preto prepínam na lokálny snapshot z docs/."
+            )
+            st.caption(f"Chyba pri načítaní zdroja: {error}")
+        else:
+            st.components.v1.html(render_html(payload), height=1600, scrolling=True)
+            st.caption(
+                f"Zdroj: {payload['metadata'].get('source_file', 'unknown')} | "
+                f"URL: {source_url}"
+            )
+            return
 
     docs_dir = PROJECT_DIR / "docs"
     parent_file = docs_dir / "index.html"
@@ -471,6 +501,38 @@ def build_comparison_summary(records: list[dict[str, Any]]) -> dict[str, Any]:
     return {
         "combined_total": combined_total,
         "summaries": summaries,
+    }
+
+
+def build_daily_kpi_summary(records: list[dict[str, Any]]) -> dict[str, Any]:
+    target_day = (datetime.now().date() - pd.Timedelta(days=1)).isoformat()
+    daily_records = [row for row in records if str(row.get("date")) == target_day]
+    sheet_rows: list[dict[str, Any]] = []
+    mail_lines: list[str] = []
+    for sheet_name in ["SKLC3", "CZLC4"]:
+        filtered = [
+            row
+            for row in daily_records
+            if normalize_text(row.get("sheet")) == normalize_text(sheet_name)
+            and normalize_text(row.get("geosize")) == normalize_text("SPO")
+            and normalize_text(row.get("doprava")) == normalize_text("Alzabox")
+        ]
+        total_count = sum(safe_number(row.get("total_count"), 0) for row in filtered)
+        eliminated_count = sum(elimination_count(row) for row in filtered)
+        sheet_rows.append(
+            {
+                "sheet": sheet_name,
+                "ratio": (eliminated_count / total_count) if total_count else None,
+            }
+        )
+        ratio = sheet_rows[-1]["ratio"]
+        ratio_text = "bez dat" if ratio is None else f"{ratio * 100:.1f}".replace(".", ",") + " %"
+        mail_lines.append(f"{sheet_name}: {ratio_text} eliminace z geosize = SPO, doprava = alzabox")
+    return {
+        "target_day": target_day,
+        "generated_at": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+        "sheet_rows": sheet_rows,
+        "mail_lines": mail_lines,
     }
 
 
@@ -1387,10 +1449,18 @@ def save_comparison_dashboard(payload: dict[str, Any]) -> None:
     COMPARISON_OUTPUT_FILE.write_text(render_comparison_html(payload), encoding="utf-8")
 
 
-def main() -> None:
+def save_daily_kpi_summary(records: list[dict[str, Any]]) -> None:
+    OUTPUT_DIR.mkdir(exist_ok=True)
+    DAILY_KPI_FILE.write_text(
+        json.dumps(build_daily_kpi_summary(records), ensure_ascii=False, indent=2),
+        encoding="utf-8",
+    )
+
+
+def main(explicit_path: str | None = None) -> None:
     print("Startujem tvorbu dashboardu...")
     try:
-        excel_path = find_excel_file()
+        excel_path = resolve_excel_input_path(explicit_path)
     except FileNotFoundError as error:
         print(f"Chyba: {error}")
         print(f"Upload priecinok: {INPUT_DIR}")
@@ -1400,6 +1470,7 @@ def main() -> None:
     payload = build_payload_from_excel(excel_path)
     save_dashboard(payload)
     save_comparison_dashboard(payload)
+    save_daily_kpi_summary(payload["records"])
 
     print("Hotovo.")
     print(f"Dashboard je ulozeny tu: {OUTPUT_FILE}")
@@ -1410,4 +1481,12 @@ if __name__ == "__main__":
     if is_streamlit_runtime():
         render_streamlit_dashboard()
     else:
-        main()
+        parser = argparse.ArgumentParser(description="Build packaging dashboard from Excel input.")
+        parser.add_argument(
+            "--input",
+            dest="input_path",
+            default="",
+            help="Optional path to the Excel file. Defaults to the newest Excel in input/.",
+        )
+        args = parser.parse_args()
+        main(args.input_path or None)

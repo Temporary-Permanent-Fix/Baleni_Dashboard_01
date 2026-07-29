@@ -1,0 +1,61 @@
+{
+  "name": "Daily Packaging Dashboard Refresh",
+  "nodes": [
+    {
+      "parameters": {
+        "triggerTimes": {
+          "item": [
+            {
+              "hour": 11,
+              "minute": 0,
+              "mode": "everyDay"
+            }
+          ]
+        }
+      },
+      "id": "3f7c0c6f-6fb7-4d50-9e07-f8ddfca2a101",
+      "name": "Cron",
+      "type": "n8n-nodes-base.cron",
+      "typeVersion": 1,
+      "position": [
+        320,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "command": "powershell -NoProfile -ExecutionPolicy Bypass -File \"C:\\Users\\Peter.Kadlec\\OneDrive - alza.cz\\Dokumenty\\Balení dashboard\\scripts\\n8n_refresh_and_push.ps1\""
+      },
+      "id": "7fa3c87b-0f7d-4a0f-8c62-9f5fdb6caa01",
+      "name": "Refresh and Push",
+      "type": "n8n-nodes-base.executeCommand",
+      "typeVersion": 1,
+      "position": [
+        620,
+        300
+      ]
+    }
+  ],
+  "connections": {
+    "Cron": {
+      "main": [
+        [
+          {
+            "node": "Refresh and Push",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1",
+    "timezone": "Europe/Prague",
+    "saveManualExecutions": true,
+    "retryOnFail": true,
+    "retryCount": 3,
+    "retryDelay": 1000
+  },
+  "active": false
+}
