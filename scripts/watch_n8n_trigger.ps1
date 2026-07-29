@@ -75,6 +75,20 @@ function Get-FileSignature {
     return (Get-FileHash -Algorithm SHA256 -LiteralPath $Path).Hash
 }
 
+function Remove-UntrackedHelperScripts {
+    foreach ($relativePath in $HelperScripts) {
+        $targetPath = Join-Path $CloneDir $relativePath
+        if (-not (Test-Path -LiteralPath $targetPath)) {
+            continue
+        }
+
+        & git -C $CloneDir ls-files --error-unmatch -- $relativePath 2>$null | Out-Null
+        if ($LASTEXITCODE -ne 0) {
+            Remove-Item -LiteralPath $targetPath -Force
+        }
+    }
+}
+
 function Test-RepositoryClean {
     $status = git -C $CloneDir status --porcelain
     if ($LASTEXITCODE -ne 0) {
@@ -91,6 +105,8 @@ function Test-RepositoryClean {
 }
 
 function Sync-Repository {
+    Remove-UntrackedHelperScripts
+
     if (-not (Test-RepositoryClean)) {
         Write-Warning "Repository is not clean. Skipping pull so local changes are not overwritten."
         return $false
