@@ -1,6 +1,7 @@
 param(
     [int]$PollSeconds = 60,
-    [switch]$RunOnce
+    [switch]$RunOnce,
+    [string]$LogPath = ""
 )
 
 $ErrorActionPreference = "Stop"
@@ -8,6 +9,12 @@ $ErrorActionPreference = "Stop"
 $ProjectDir = Resolve-Path (Join-Path $PSScriptRoot "..")
 $WatcherRoot = Join-Path $env:TEMP "baleni-dashboard-n8n-watcher"
 $CloneDir = Join-Path $WatcherRoot "repo"
+$LogDir = Join-Path $WatcherRoot "logs"
+$ResolvedLogPath = if ([string]::IsNullOrWhiteSpace($LogPath)) {
+    Join-Path $LogDir "watcher.log"
+} else {
+    $LogPath
+}
 $TriggerFile = Join-Path $CloneDir "n8n\refresh.request.json"
 $RefreshScript = Join-Path $CloneDir "scripts\n8n_refresh_and_push.ps1"
 $HelperScripts = @(
@@ -122,39 +129,58 @@ function Sync-Repository {
 }
 
 Ensure-CloneWorkspace
+New-Item -ItemType Directory -Force -Path $LogDir | Out-Null
 
-if (-not (Test-Path -LiteralPath $TriggerFile)) {
-    throw "Trigger file not found in clone workspace: $TriggerFile"
-}
+try {
+    try {
+        Start-Transcript -Path $ResolvedLogPath -Append | Out-Null
+    } catch {
+        Write-Warning "Nepodarilo sa zapnut transcript logovanie: $($_.Exception.Message)"
+    }
 
-if (-not (Test-Path -LiteralPath $RefreshScript)) {
-    throw "Could not find refresh script: $RefreshScript"
-}
+    Write-Host "Watcher log: $ResolvedLogPath"
 
-$script:lastHandledSignature = Get-FileSignature -Path $TriggerFile
+    if (-not (Test-Path -LiteralPath $TriggerFile)) {
+        throw "Trigger file not found in clone workspace: $TriggerFile"
+    }
 
-if (-not (Sync-Repository)) {
-    Write-Warning "Repository sync failed. I will try again on the next cycle."
-}
+    if (-not (Test-Path -LiteralPath $RefreshScript)) {
+        throw "Could not find refresh script: $RefreshScript"
+    }
 
-while ($true) {
-    if (Sync-Repository) {
-        $currentSignature = Get-FileSignature -Path $TriggerFile
-        if ($currentSignature -and $currentSignature -ne $script:lastHandledSignature) {
-            Write-Host "New trigger detected from n8n. Running refresh..."
-            & powershell -NoProfile -ExecutionPolicy Bypass -File $RefreshScript
-            if ($LASTEXITCODE -ne 0) {
-                throw "Refresh script failed."
+    $script:lastHandledSignature = Get-FileSignature -Path $TriggerFile
+
+    if (-not (Sync-Repository)) {
+        Write-Warning "Repository sync failed. I will try again on the next cycle."
+    }
+
+    while ($true) {
+        if (Sync-Repository) {
+            $currentSignature = Get-FileSignature -Path $TriggerFile
+            if ($currentSignature -and $currentSignature -ne $script:lastHandledSignature) {
+                Write-Host "New trigger detected from n8n. Running refresh..."
+                & powershell -NoProfile -ExecutionPolicy Bypass -File $RefreshScript
+                if ($LASTEXITCODE -ne 0) {
+                    throw "Refresh script failed."
+                }
+
+                $script:lastHandledSignature = $currentSignature
+                Write-Host "Refresh finished. Waiting for the next trigger."
             }
-
-            $script:lastHandledSignature = $currentSignature
-            Write-Host "Refresh finished. Waiting for the next trigger."
         }
-    }
 
-    if ($RunOnce) {
-        break
-    }
+        if ($RunOnce) {
+            break
+        }
 
-    Start-Sleep -Seconds $PollSeconds
+        Start-Sleep -Seconds $PollSeconds
+    }
+} catch {
+    throw
+} finally {
+    try {
+        Stop-Transcript | Out-Null
+    } catch {
+        # Transcript may already be stopped or unavailable; ignore on exit.
+    }
 }
