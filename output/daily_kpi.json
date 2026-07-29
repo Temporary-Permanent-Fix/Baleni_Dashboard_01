@@ -1,18 +1,18 @@
 {
   "target_day": "2026-07-28",
-  "generated_at": "2026-07-29 08:31:44",
+  "generated_at": "2026-07-29 09:33:15",
   "sheet_rows": [
     {
       "sheet": "SKLC3",
-      "ratio": 0.9131769348827011
+      "ratio": null
     },
     {
       "sheet": "CZLC4",
-      "ratio": 0.9394115933585785
+      "ratio": null
     }
   ],
   "mail_lines": [
-    "SKLC3: 91,3 % eliminace z geosize = SPO, doprava = alzabox",
-    "CZLC4: 93,9 % eliminace z geosize = SPO, doprava = alzabox"
+    "SKLC3: bez dat eliminace z geosize = SPO, doprava = alzabox",
+    "CZLC4: bez dat eliminace z geosize = SPO, doprava = alzabox"
   ]
 }
