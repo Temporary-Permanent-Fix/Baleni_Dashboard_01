@@ -61,7 +61,16 @@ def find_excel_file() -> Path:
         raise FileNotFoundError(
             "V zlozke input nie je ziaden Excel subor. Vloz tam .xlsx, .xls alebo .xlsm subor."
         )
-    return sorted(excel_files, key=lambda path: path.stat().st_mtime, reverse=True)[0]
+
+    def workbook_priority(path: Path) -> tuple[int, float, str]:
+        try:
+            workbook = load_workbook(path, read_only=True, data_only=True)
+            preferred = {"SKLC3", "CZLC4"}.issubset(set(workbook.sheetnames))
+        except Exception:
+            preferred = False
+        return (1 if preferred else 0, path.stat().st_mtime, path.name.lower())
+
+    return sorted(excel_files, key=workbook_priority, reverse=True)[0]
 
 
 def resolve_excel_input_path(explicit_path: str | None = None) -> Path:
@@ -136,14 +145,17 @@ def download_excel_to_temp(source_url: str) -> Path:
 
 
 def build_payload_from_excel(excel_path: Path) -> dict[str, Any]:
-    readable_copy = copy_excel_for_reading(excel_path)
     try:
-        records, metadata = load_records(readable_copy)
-    finally:
+        records, metadata = load_records(excel_path)
+    except Exception:
+        readable_copy = copy_excel_for_reading(excel_path)
         try:
-            readable_copy.unlink(missing_ok=True)
-        except OSError:
-            pass
+            records, metadata = load_records(readable_copy)
+        finally:
+            try:
+                readable_copy.unlink(missing_ok=True)
+            except OSError:
+                pass
     return build_payload(records, metadata)
 
 
@@ -509,7 +521,8 @@ def build_daily_kpi_summary(records: list[dict[str, Any]]) -> dict[str, Any]:
         {
             str(row.get("date"))
             for row in records
-            if str(row.get("date")) and str(row.get("date")) != "Nezadane"
+            if isinstance(row.get("date"), str)
+            and re.fullmatch(r"\d{4}-\d{2}-\d{2}", str(row.get("date")))
         }
     )
     fallback_day = (datetime.now().date() - pd.Timedelta(days=1)).isoformat()
