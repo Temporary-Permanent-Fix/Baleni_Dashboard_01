@@ -14,6 +14,12 @@ function Write-Log {
     Add-Content -LiteralPath $LogPath -Value "[$(Get-Date -Format 'yyyy-MM-dd HH:mm:ss')] $Message"
 }
 
+function Strip-LeadingEquals {
+    param([AllowNull()][object]$Value)
+
+    return ([string]$Value) -replace '^\s*=+\s*', ''
+}
+
 Set-Content -LiteralPath $LogPath -Value "[$(Get-Date -Format 'yyyy-MM-dd HH:mm:ss')] start"
 
 if ([string]::IsNullOrWhiteSpace($DailyKpiPath)) {
@@ -57,14 +63,14 @@ Write-Log "Creating mail item"
 $mail = $outlook.CreateItem(0)
 if (-not [string]::IsNullOrWhiteSpace($From)) {
     try {
-        $mail.SentOnBehalfOfName = $From
+        $mail.SentOnBehalfOfName = (Strip-LeadingEquals $From)
     } catch {
         Write-Warning "Could not set SentOnBehalfOfName: $($_.Exception.Message)"
     }
 }
 
-$mail.To = $To
-$mail.Subject = "Balenie dashboard - $dateText"
+$mail.To = Strip-LeadingEquals $To
+$mail.Subject = Strip-LeadingEquals "Balenie dashboard - $dateText"
 $mail.Body = $bodyLine
 $mail.HTMLBody = $htmlBody
 

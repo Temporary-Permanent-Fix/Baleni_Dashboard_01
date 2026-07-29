@@ -37,6 +37,10 @@ def format_pct(value: Any) -> str:
     return f"{(float(value or 0) * 100):.1f}".replace(".", ",") + " %"
 
 
+def strip_leading_equals(value: Any) -> str:
+    return re.sub(r"^\s*=+\s*", "", str(value or "")).strip()
+
+
 def is_special_elimination_group(row: dict[str, Any]) -> bool:
     return normalize_text(row.get("packing_group")) == SPECIAL_GROUP
 
@@ -123,7 +127,7 @@ def env_bool(name: str, default: bool = False) -> bool:
 
 def build_message(summary: dict[str, Any], link: str, recipient: str, sender: str) -> EmailMessage:
     subject_prefix = os.environ.get("DASHBOARD_MAIL_SUBJECT_PREFIX", "Balenie dashboard").strip() or "Balenie dashboard"
-    subject = f"{subject_prefix} - {summary['target_day']}"
+    subject = strip_leading_equals(f"{subject_prefix} - {summary['target_day']}")
 
     lines = []
     for row in summary["sheet_rows"]:
@@ -139,8 +143,8 @@ def build_message(summary: dict[str, Any], link: str, recipient: str, sender: st
 
     message = EmailMessage()
     message["Subject"] = subject
-    message["From"] = sender
-    message["To"] = recipient
+    message["From"] = strip_leading_equals(sender)
+    message["To"] = strip_leading_equals(recipient)
     message.set_content(body_line)
     message.add_alternative(html_body, subtype="html")
     return message
