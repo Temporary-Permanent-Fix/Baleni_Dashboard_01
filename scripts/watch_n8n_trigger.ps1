@@ -82,8 +82,8 @@ function Remove-UntrackedHelperScripts {
             continue
         }
 
-        & git -C $CloneDir ls-files --error-unmatch -- $relativePath 2>$null | Out-Null
-        if ($LASTEXITCODE -ne 0) {
+        $tracked = & git -C $CloneDir ls-files -- $relativePath
+        if ([string]::IsNullOrWhiteSpace($tracked)) {
             Remove-Item -LiteralPath $targetPath -Force
         }
     }
