@@ -1,215 +1,211 @@
-{
-  "name": "Daily Packaging Dashboard Refresh v2",
-  "nodes": [
-    {
-      "parameters": {
-        "triggerTimes": {
-          "item": [
-            {
-              "hour": 11,
-              "minute": 0,
-              "mode": "everyDay"
-            }
-          ]
-        }
-      },
-      "id": "a1a0c8e5-0f44-4d8c-8f0f-1d0e0f4d9b01",
-      "name": "Cron",
-      "type": "n8n-nodes-base.cron",
-      "typeVersion": 1,
-      "position": [
-        320,
-        300
-      ]
-    },
-    {
-      "parameters": {
-        "resource": "file",
-        "operation": "edit",
-        "owner": {
-          "__rl": true,
-          "mode": "name",
-          "value": "Temporary-Permanent-Fix"
-        },
-        "repository": {
-          "__rl": true,
-          "mode": "name",
-          "value": "Baleni_Dashboard_01"
-        },
-        "filePath": "n8n/refresh.request.json",
-        "fileContent": "={{ JSON.stringify({ requested_at: $now.toISO(), requested_by: 'n8n', action: 'refresh-and-push', note: 'Daily trigger for local watcher' }, null, 2) }}",
-        "commitMessage": "={{ 'Refresh trigger ' + $now.toFormat('yyyy-LL-dd HH:mm') }}"
-      },
-      "id": "7cc3cb8c-bd7a-4d8b-9fd5-b88c1d2f4bc1",
-      "name": "Write trigger to GitHub",
-      "type": "n8n-nodes-base.github",
-      "typeVersion": 1.1,
-      "position": [
-        620,
-        300
-      ],
-      "credentials": {
-        "githubApi": {
-          "name": "GitHub"
-        }
-      }
-    },
-    {
-      "parameters": {
-        "amount": 3,
-        "unit": "minutes"
-      },
-      "id": "b2b7b8b2-4c4d-4c6f-a1aa-3c9b52a5f7f4",
-      "name": "Wait for refresh",
-      "type": "n8n-nodes-base.wait",
-      "typeVersion": 1.1,
-      "position": [
-        900,
-        300
-      ]
-    },
-    {
-      "parameters": {
-        "resource": "file",
-        "operation": "get",
-        "owner": {
-          "__rl": true,
-          "mode": "name",
-          "value": "Temporary-Permanent-Fix"
-        },
-        "repository": {
-          "__rl": true,
-          "mode": "name",
-          "value": "Baleni_Dashboard_01"
-        },
-        "filePath": "output/daily_kpi.json",
-        "asBinaryProperty": false,
-        "additionalParameters": {}
-      },
-      "id": "c4a1cc70-3a3d-42db-93f6-4b9f38a6c2d3",
-      "name": "Read daily KPI from GitHub",
-      "type": "n8n-nodes-base.github",
-      "typeVersion": 1.1,
-      "position": [
-        1180,
-        300
-      ],
-      "credentials": {
-        "githubApi": {
-          "name": "GitHub"
-        }
-      }
-    },
-    {
-      "parameters": {
-        "mode": "runOnceForEachItem",
-        "jsCode": "function parseSummary(input) {\n  if (input && typeof input === 'object' && input.target_day && Array.isArray(input.sheet_rows)) {\n    return input;\n  }\n\n  const candidates = [input?.content, input?.data, input?.fileContent, input?.jsonContent];\n  for (const candidate of candidates) {\n    if (typeof candidate === 'string' && candidate.trim()) {\n      try {\n        const parsed = JSON.parse(candidate);\n        if (parsed && parsed.target_day && Array.isArray(parsed.sheet_rows)) {\n          return parsed;\n        }\n      } catch (error) {\n        // Try the next candidate.\n      }\n    }\n  }\n\n  return input ?? {};\n}\n\nfunction formatDate(isoDate) {\n  if (!isoDate) return '';\n  const date = new Date(`${isoDate}T00:00:00`);\n  if (Number.isNaN(date.getTime())) return String(isoDate);\n  return `${date.getDate()}.${date.getMonth() + 1}.${date.getFullYear()}`;\n}\n\nfunction formatRatio(ratio) {\n  if (ratio === null || ratio === undefined || ratio === '') {\n    return 'bez dat';\n  }\n\n  const value = Number(ratio);\n  if (Number.isNaN(value)) {\n    return 'bez dat';\n  }\n\n  return `${(value * 100).toFixed(1).replace('.', ',')} %`;\n}\n\nconst summary = parseSummary($json);\nconst targetDayText = formatDate(summary.target_day);\nconst rows = Array.isArray(summary.sheet_rows) ? summary.sheet_rows : [];\nconst mailLines = Array.isArray(summary.mail_lines) && summary.mail_lines.length\n  ? summary.mail_lines\n  : rows.map((row) => `${row.sheet}: ${formatRatio(row.ratio)} eliminace z geosize = SPO, doprava = alzabox`);\nconst bodyContent = mailLines.map((line) => `<p style=\"margin: 0 0 6px;\">${line}</p>`).join('');\n\nreturn [\n  {\n    json: {\n      subject: `Eliminace v posledný deň - ${targetDayText}`,\n      toRecipients: [
-        {
-          emailAddress: {
-            address: 'peter.kadlec@alza.sk'
-          }
-        }
-      ],\n      bodyContent,\n      bodyContentType: 'html',\n      targetDay: summary.target_day ?? '',\n      generatedAt: summary.generated_at ?? ''\n    }\n  }\n];"
-      },
-      "id": "e43f8b1a-8f3d-4e3a-99f6-8e9f6f2b85ef",
-      "name": "Compose Outlook email",
-      "type": "n8n-nodes-base.code",
-      "typeVersion": 2,
-      "position": [
-        1460,
-        300
-      ]
-    },
-    {
-      "parameters": {
-        "resource": "message",
-        "operation": "send",
-        "toRecipients": "={{ $json.toRecipients }}",
-        "subject": "={{ $json.subject }}",
-        "bodyContent": "={{ $json.bodyContent }}",
-        "additionalFields": {
-          "bodyContentType": "={{ $json.bodyContentType }}"
-        }
-      },
-      "id": "f0e81f5b-a813-4e03-9400-a97842b6b9b5",
-      "name": "Send Outlook email",
-      "type": "n8n-nodes-base.microsoftOutlook",
-      "typeVersion": 2,
-      "position": [
-        1740,
-        300
-      ],
-      "credentials": {
-        "microsoftOutlookOAuth2Api": {
-          "name": "Microsoft Outlook account"
-        }
-      }
-    }
-  ],
-  "connections": {
-    "Cron": {
-      "main": [
-        [
-          {
-            "node": "Write trigger to GitHub",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
-    },
-    "Write trigger to GitHub": {
-      "main": [
-        [
-          {
-            "node": "Wait for refresh",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
-    },
-    "Wait for refresh": {
-      "main": [
-        [
-          {
-            "node": "Read daily KPI from GitHub",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
-    },
-    "Read daily KPI from GitHub": {
-      "main": [
-        [
-          {
-            "node": "Compose Outlook email",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
-    },
-    "Compose Outlook email": {
-      "main": [
-        [
-          {
-            "node": "Send Outlook email",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
-    }
-  },
-  "settings": {
-    "executionOrder": "v1",
-    "timezone": "Europe/Prague",
-    "saveManualExecutions": true,
-    "retryOnFail": true,
-    "retryCount": 3,
-    "retryDelay": 1000
-  },
-  "active": false
+﻿{
+    "name":  "Daily Packaging Dashboard Refresh v2",
+    "nodes":  [
+                  {
+                      "parameters":  {
+                                         "triggerTimes":  {
+                                                              "item":  [
+                                                                           {
+                                                                               "hour":  11,
+                                                                               "minute":  0,
+                                                                               "mode":  "everyDay"
+                                                                           }
+                                                                       ]
+                                                          }
+                                     },
+                      "id":  "a1a0c8e5-0f44-4d8c-8f0f-1d0e0f4d9b01",
+                      "name":  "Cron",
+                      "type":  "n8n-nodes-base.cron",
+                      "typeVersion":  1,
+                      "position":  [
+                                       320,
+                                       300
+                                   ]
+                  },
+                  {
+                      "parameters":  {
+                                         "resource":  "file",
+                                         "operation":  "edit",
+                                         "owner":  {
+                                                       "__rl":  true,
+                                                       "mode":  "name",
+                                                       "value":  "Temporary-Permanent-Fix"
+                                                   },
+                                         "repository":  {
+                                                            "__rl":  true,
+                                                            "mode":  "name",
+                                                            "value":  "Baleni_Dashboard_01"
+                                                        },
+                                         "filePath":  "n8n/refresh.request.json",
+                                         "fileContent":  "={{ JSON.stringify({ requested_at: $now.toISO(), requested_by: \u0027n8n\u0027, action: \u0027refresh-and-push\u0027, note: \u0027Daily trigger for local watcher\u0027 }, null, 2) }}",
+                                         "commitMessage":  "={{ \u0027Refresh trigger \u0027 + $now.toFormat(\u0027yyyy-LL-dd HH:mm\u0027) }}"
+                                     },
+                      "id":  "7cc3cb8c-bd7a-4d8b-9fd5-b88c1d2f4bc1",
+                      "name":  "Write trigger to GitHub",
+                      "type":  "n8n-nodes-base.github",
+                      "typeVersion":  1.1,
+                      "position":  [
+                                       620,
+                                       300
+                                   ],
+                      "credentials":  {
+                                          "githubApi":  {
+                                                            "name":  "GitHub"
+                                                        }
+                                      }
+                  },
+                  {
+                      "parameters":  {
+                                         "amount":  3,
+                                         "unit":  "minutes"
+                                     },
+                      "id":  "b2b7b8b2-4c4d-4c6f-a1aa-3c9b52a5f7f4",
+                      "name":  "Wait for refresh",
+                      "type":  "n8n-nodes-base.wait",
+                      "typeVersion":  1.1,
+                      "position":  [
+                                       900,
+                                       300
+                                   ]
+                  },
+                  {
+                      "parameters":  {
+                                         "resource":  "file",
+                                         "operation":  "get",
+                                         "owner":  {
+                                                       "__rl":  true,
+                                                       "mode":  "name",
+                                                       "value":  "Temporary-Permanent-Fix"
+                                                   },
+                                         "repository":  {
+                                                            "__rl":  true,
+                                                            "mode":  "name",
+                                                            "value":  "Baleni_Dashboard_01"
+                                                        },
+                                         "filePath":  "output/daily_kpi.json",
+                                         "asBinaryProperty":  false,
+                                         "additionalParameters":  {
+
+                                                                  }
+                                     },
+                      "id":  "c4a1cc70-3a3d-42db-93f6-4b9f38a6c2d3",
+                      "name":  "Read daily KPI from GitHub",
+                      "type":  "n8n-nodes-base.github",
+                      "typeVersion":  1.1,
+                      "position":  [
+                                       1180,
+                                       300
+                                   ],
+                      "credentials":  {
+                                          "githubApi":  {
+                                                            "name":  "GitHub"
+                                                        }
+                                      }
+                  },
+                  {
+                      "parameters":  {
+                                         "mode":  "runOnceForEachItem",
+                                         "jsCode":  "function parseSummary(input) {\n  if (input \u0026\u0026 typeof input === \u0027object\u0027 \u0026\u0026 input.target_day \u0026\u0026 Array.isArray(input.sheet_rows)) {\n    return input;\n  }\n\n  const candidates = [input?.content, input?.data, input?.fileContent, input?.jsonContent];\n  for (const candidate of candidates) {\n    if (typeof candidate === \u0027string\u0027 \u0026\u0026 candidate.trim()) {\n      try {\n        const parsed = JSON.parse(candidate);\n        if (parsed \u0026\u0026 parsed.target_day \u0026\u0026 Array.isArray(parsed.sheet_rows)) {\n          return parsed;\n        }\n      } catch (error) {\n        // Try the next candidate.\n      }\n    }\n  }\n\n  return input ?? {};\n}\n\nfunction formatDate(isoDate) {\n  if (!isoDate) return \u0027\u0027;\n  const date = new Date(`${isoDate}T00:00:00`);\n  if (Number.isNaN(date.getTime())) return String(isoDate);\n  return `${date.getDate()}.${date.getMonth() + 1}.${date.getFullYear()}`;\n}\n\nfunction formatRatio(ratio) {\n  if (ratio === null || ratio === undefined || ratio === \u0027\u0027) {\n    return \u0027bez dat\u0027;\n  }\n\n  const value = Number(ratio);\n  if (Number.isNaN(value)) {\n    return \u0027bez dat\u0027;\n  }\n\n  return `${(value * 100).toFixed(1).replace(\u0027.\u0027, \u0027,\u0027)} %`;\n}\n\nfunction stripLeadingEquals(value) {\n  return String(value ?? \u0027\u0027).replace(/^\\s*=+\\s*/, \u0027\u0027).trim();\n}\n\nconst summary = parseSummary($json);\nconst targetDayText = formatDate(summary.target_day);\nconst rows = Array.isArray(summary.sheet_rows) ? summary.sheet_rows : [];\nconst mailLines = Array.isArray(summary.mail_lines) \u0026\u0026 summary.mail_lines.length\n  ? summary.mail_lines\n  : rows.map((row) =\u003e `${row.sheet}: ${formatRatio(row.ratio)} eliminace z geosize = SPO, doprava = alzabox`);\nconst safeMailLines = mailLines.map(stripLeadingEquals);\nconst bodyContent = safeMailLines.map((line) =\u003e `\u003cp style=\"margin: 0 0 6px;\"\u003e${line}\u003c/p\u003e`).join(\u0027\u0027);\n\nreturn [\n  {\n    json: {\n      subject: stripLeadingEquals(`Eliminace v posledný deň - ${targetDayText}`),\n      toRecipients: [\n        {\n          emailAddress: {\n            address: \u0027peter.kadlec@alza.sk\u0027\n          }\n        }\n      ],\n      bodyContent,\n      bodyContentType: \u0027html\u0027,\n      targetDay: summary.target_day ?? \u0027\u0027,\n      generatedAt: summary.generated_at ?? \u0027\u0027\n    }\n  }\n];"
+                                     },
+                      "id":  "e43f8b1a-8f3d-4e3a-99f6-8e9f6f2b85ef",
+                      "name":  "Compose Outlook email",
+                      "type":  "n8n-nodes-base.code",
+                      "typeVersion":  2,
+                      "position":  [
+                                       1460,
+                                       300
+                                   ]
+                  },
+                  {
+                      "parameters":  {
+                                         "resource":  "message",
+                                         "operation":  "send",
+                                         "toRecipients":  "={{ $json.toRecipients }}",
+                                         "subject":  "={{ $json.subject }}",
+                                         "bodyContent":  "={{ $json.bodyContent }}",
+                                         "additionalFields":  {
+                                                                  "bodyContentType":  "={{ $json.bodyContentType }}"
+                                                              }
+                                     },
+                      "id":  "f0e81f5b-a813-4e03-9400-a97842b6b9b5",
+                      "name":  "Send Outlook email",
+                      "type":  "n8n-nodes-base.microsoftOutlook",
+                      "typeVersion":  2,
+                      "position":  [
+                                       1740,
+                                       300
+                                   ],
+                      "credentials":  {
+                                          "microsoftOutlookOAuth2Api":  {
+                                                                            "name":  "Microsoft Outlook account"
+                                                                        }
+                                      }
+                  }
+              ],
+    "connections":  {
+                        "Cron":  {
+                                     "main":  [
+                                                  [
+                                                      {
+                                                          "node":  "Write trigger to GitHub",
+                                                          "type":  "main",
+                                                          "index":  0
+                                                      }
+                                                  ]
+                                              ]
+                                 },
+                        "Write trigger to GitHub":  {
+                                                        "main":  [
+                                                                     [
+                                                                         {
+                                                                             "node":  "Wait for refresh",
+                                                                             "type":  "main",
+                                                                             "index":  0
+                                                                         }
+                                                                     ]
+                                                                 ]
+                                                    },
+                        "Wait for refresh":  {
+                                                 "main":  [
+                                                              [
+                                                                  {
+                                                                      "node":  "Read daily KPI from GitHub",
+                                                                      "type":  "main",
+                                                                      "index":  0
+                                                                  }
+                                                              ]
+                                                          ]
+                                             },
+                        "Read daily KPI from GitHub":  {
+                                                           "main":  [
+                                                                        [
+                                                                            {
+                                                                                "node":  "Compose Outlook email",
+                                                                                "type":  "main",
+                                                                                "index":  0
+                                                                            }
+                                                                        ]
+                                                                    ]
+                                                       },
+                        "Compose Outlook email":  {
+                                                      "main":  [
+                                                                   [
+                                                                       {
+                                                                           "node":  "Send Outlook email",
+                                                                           "type":  "main",
+                                                                           "index":  0
+                                                                       }
+                                                                   ]
+                                                               ]
+                                                  }
+                    },
+    "settings":  {
+                     "executionOrder":  "v1",
+                     "timezone":  "Europe/Prague",
+                     "saveManualExecutions":  true,
+                     "retryOnFail":  true,
+                     "retryCount":  3,
+                     "retryDelay":  1000
+                 },
+    "active":  false
 }
