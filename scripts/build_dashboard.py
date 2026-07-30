@@ -938,6 +938,25 @@ def render_html(payload: dict[str, Any]) -> str:
       return String(value ?? 'Nezadane');
     }
 
+    function parseDateKey(value) {
+      if (value instanceof Date && !Number.isNaN(value.getTime())) {
+        return value;
+      }
+      const text = normalizeLabel(value);
+      if (!text || text === 'Nezadane') return null;
+      const parsed = new Date(`${text}T00:00:00`);
+      return Number.isNaN(parsed.getTime()) ? null : parsed;
+    }
+
+    function formatTrendDate(value) {
+      const parsed = parseDateKey(value);
+      if (!parsed) return normalizeLabel(value);
+      const day = String(parsed.getDate()).padStart(2, '0');
+      const month = String(parsed.getMonth() + 1).padStart(2, '0');
+      const year = parsed.getFullYear();
+      return `${day}.${month}.${year}`;
+    }
+
     function displayLabel(field, value) {
       const normalized = normalizeLabel(value);
       if (field === 'doprava' && normalized === 'Nezadane') return 'Pobocka';
@@ -995,7 +1014,14 @@ def render_html(payload: dict[str, Any]) -> str:
         item.total += Number(row.total_count) || 0;
         map.set(key, item);
       }
-      return [...map.values()].sort((a, b) => a.key.localeCompare(b.key, 'sk')).map(item => ({
+      return [...map.values()].sort((a, b) => {
+        const aDate = parseDateKey(a.key);
+        const bDate = parseDateKey(b.key);
+        if (aDate && bDate) return aDate - bDate;
+        if (aDate) return -1;
+        if (bDate) return 1;
+        return a.key.localeCompare(b.key, 'sk');
+      }).map(item => ({
         ...item,
         ratio: item.total ? item.ab / item.total : 0,
       }));
@@ -1024,7 +1050,7 @@ def render_html(payload: dict[str, Any]) -> str:
       const targetY = y(targetRatio);
       const labelsLine = data.map((d, i) => {
         const show = data.length <= 12 || i === 0 || i === data.length - 1 || i % Math.ceil(data.length / 8) === 0;
-        return show ? `<text x="${x(i)}" y="${height - 16}" text-anchor="middle" font-size="11" fill="#5f6b7a">${escapeHtml(String(d.key).slice(5))}</text>` : '';
+        return show ? `<text x="${x(i)}" y="${height - 16}" text-anchor="middle" font-size="11" fill="#5f6b7a">${escapeHtml(formatTrendDate(d.key))}</text>` : '';
       }).join('');
 
       holder.innerHTML = `
@@ -1160,10 +1186,18 @@ def render_html(payload: dict[str, Any]) -> str:
       function renderMeta(rows) {
         const meta = payload.metadata || {};
         const totalRows = sheetRows.length;
+        const validDates = rows
+          .map(row => parseDateKey(row.date))
+          .filter(Boolean)
+          .sort((a, b) => a - b);
+        const dateRange = validDates.length
+          ? `${formatTrendDate(validDates[0])} - ${formatTrendDate(validDates[validDates.length - 1])}`
+          : 'bez dátumov';
         document.getElementById(`${prefix}meta`).innerHTML = [
           `Source: ${meta.source_file || 'unknown'}`,
           `Sheet: ${sheetName}`,
           `Generated: ${meta.generated_at || ''}`,
+          `Date range: ${dateRange}`,
           `Rows: ${formatInt(rows.length)} / ${formatInt(totalRows)}`,
           `Detected: ${info.detected?.doprava ? 'AB + Total + transport' : (info.detected?.ab_eliminated ? 'AB + Total' : 'pivot/flat')}`,
         ].map(text => `<span class="pill">${text}</span>`).join('');
