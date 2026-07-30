@@ -107,6 +107,10 @@ Verzia 2 je postavena tak, aby cloud n8n nemusel spustat lokalny PowerShell pria
 3. watcher stiahne zmenu, spusti `scripts/n8n_refresh_and_push.ps1` a pushne vysledok spat do GitHubu.
 4. n8n si po krátkom waiti stiahne `output/daily_kpi.json` z GitHubu a cez Outlook node odošle mail s KPI za včerajšok.
 
+Ak po 11:15 este nie je v Exceli aspon vcerajsi den, refresh sa zastavi, aby sa do gitu ani do Streamlit appky nepustili stare data.
+
+Refresh na PC teraz najprv otvori desktop Excel, spravi `Data -> Aktualizovat vse` a workbook ulozi. Až potom sa z neho vyrába dashboard a pushuje do gitu.
+
 Lokalny watcher spustis takto:
 
 ```powershell

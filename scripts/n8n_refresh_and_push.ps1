@@ -1,6 +1,7 @@
 param(
     [string]$ExcelPath = "",
-    [string]$CommitMessage = ""
+    [string]$CommitMessage = "",
+    [switch]$AllowStale
 )
 
 $ErrorActionPreference = "Stop"
@@ -20,7 +21,15 @@ if ([string]::IsNullOrWhiteSpace($ExcelPath)) {
         Select-Object -First 1 -ExpandProperty FullName
 }
 
-& powershell -NoProfile -ExecutionPolicy Bypass -File (Join-Path $ProjectDir "scripts\refresh_local_dashboard.ps1") -ExcelPath $ExcelPath
+$refreshArgs = @("-File", (Join-Path $ProjectDir "scripts\refresh_local_dashboard.ps1"))
+if (-not [string]::IsNullOrWhiteSpace($ExcelPath)) {
+    $refreshArgs += @("-ExcelPath", $ExcelPath)
+}
+if ($AllowStale) {
+    $refreshArgs += "-AllowStale"
+}
+
+& powershell -NoProfile -ExecutionPolicy Bypass @refreshArgs
 
 if ($LASTEXITCODE -ne 0) {
     throw "Local dashboard refresh failed with exit code $LASTEXITCODE."

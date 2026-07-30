@@ -18,6 +18,7 @@ $ResolvedLogPath = if ([string]::IsNullOrWhiteSpace($LogPath)) {
 $TriggerFile = Join-Path $CloneDir "n8n\refresh.request.json"
 $RefreshScript = Join-Path $CloneDir "scripts\n8n_refresh_and_push.ps1"
 $HelperScripts = @(
+    "scripts\refresh_input_excel.ps1",
     "scripts\n8n_refresh_and_push.ps1",
     "scripts\refresh_local_dashboard.ps1",
     "scripts\send_dashboard_email.py",
@@ -104,6 +105,7 @@ function Test-RepositoryClean {
 
     $status = $status | Where-Object {
         $_ -notmatch '^\?\?\s+scripts/n8n_refresh_and_push\.ps1$' -and
+        $_ -notmatch '^\?\?\s+scripts/refresh_input_excel\.ps1$' -and
         $_ -notmatch '^\?\?\s+scripts/refresh_local_dashboard\.ps1$' -and
         $_ -notmatch '^\?\?\s+scripts/send_dashboard_email\.py$' -and
         $_ -notmatch '^\?\?\s+scripts/send_dashboard_email_outlook\.ps1$'

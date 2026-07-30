@@ -15,6 +15,7 @@ from pathlib import Path
 from typing import Any
 from urllib.parse import urlparse
 from urllib.request import Request, urlopen
+from zoneinfo import ZoneInfo
 
 import pandas as pd
 from openpyxl import load_workbook
@@ -28,6 +29,9 @@ COMPARISON_OUTPUT_FILE = OUTPUT_DIR / "comparison_dashboard.html"
 DAILY_KPI_FILE = OUTPUT_DIR / "daily_kpi.json"
 
 TARGET_RATIO = 0.75
+FRESHNESS_TIMEZONE = ZoneInfo(os.environ.get("DASHBOARD_TIMEZONE", "Europe/Prague"))
+FRESHNESS_CUTOFF_HOUR = int(os.environ.get("DASHBOARD_FRESHNESS_CUTOFF_HOUR", "11"))
+FRESHNESS_CUTOFF_MINUTE = int(os.environ.get("DASHBOARD_FRESHNESS_CUTOFF_MINUTE", "15"))
 
 COLUMN_ALIASES = {
     "date": ["datum", "date", "day", "den"],
@@ -72,6 +76,51 @@ def require_packaging_workbook(path: Path) -> None:
             "Packaging dashboard ho z bezpecnostnych dovodov odmieta. "
             "Pouzi Data_pro _balení dashboard_6_2026.xlsx alebo iny packaging input."
         )
+
+
+def get_prague_now() -> datetime:
+    return datetime.now(FRESHNESS_TIMEZONE)
+
+
+def get_latest_available_day(records: list[dict[str, Any]]) -> str | None:
+    available_days = sorted(
+        {
+            str(row.get("date"))
+            for row in records
+            if isinstance(row.get("date"), str)
+            and re.fullmatch(r"\d{4}-\d{2}-\d{2}", str(row.get("date")))
+        }
+    )
+    return available_days[-1] if available_days else None
+
+
+def build_freshness_state(records: list[dict[str, Any]]) -> dict[str, Any]:
+    now = get_prague_now()
+    expected_day = (now.date() - pd.Timedelta(days=1)).isoformat()
+    latest_available_day = get_latest_available_day(records)
+    cutoff_reached = (now.hour, now.minute) >= (FRESHNESS_CUTOFF_HOUR, FRESHNESS_CUTOFF_MINUTE)
+    is_stale = bool(cutoff_reached and (not latest_available_day or latest_available_day < expected_day))
+    return {
+        "checked_at": now.strftime("%Y-%m-%d %H:%M:%S %Z"),
+        "timezone": str(FRESHNESS_TIMEZONE),
+        "cutoff_time": f"{FRESHNESS_CUTOFF_HOUR:02d}:{FRESHNESS_CUTOFF_MINUTE:02d}",
+        "expected_day": expected_day,
+        "latest_available_day": latest_available_day,
+        "cutoff_reached": cutoff_reached,
+        "is_stale": is_stale,
+    }
+
+
+def ensure_fresh_daily_data(records: list[dict[str, Any]]) -> dict[str, Any]:
+    freshness = build_freshness_state(records)
+    if freshness["is_stale"]:
+        latest_day = freshness["latest_available_day"] or "ziadny dostupny datum"
+        raise RuntimeError(
+            "Excel je stale a refresh bol zastaveny, aby sme nepustili stare data do gitu ani do Streamlitu. "
+            f"Posledny dostupny den je {latest_day}, ale po {freshness['cutoff_time']} "
+            f"({freshness['timezone']}) ocakavame aspon {freshness['expected_day']}."
+        )
+    return freshness
 
 
 def find_excel_file() -> Path:
@@ -552,17 +601,11 @@ def build_comparison_summary(records: list[dict[str, Any]]) -> dict[str, Any]:
     }
 
 
-def build_daily_kpi_summary(records: list[dict[str, Any]]) -> dict[str, Any]:
-    available_days = sorted(
-        {
-            str(row.get("date"))
-            for row in records
-            if isinstance(row.get("date"), str)
-            and re.fullmatch(r"\d{4}-\d{2}-\d{2}", str(row.get("date")))
-        }
-    )
-    fallback_day = (datetime.now().date() - pd.Timedelta(days=1)).isoformat()
-    target_day = available_days[-1] if available_days else fallback_day
+def build_daily_kpi_summary(records: list[dict[str, Any]], freshness: dict[str, Any] | None = None) -> dict[str, Any]:
+    if freshness:
+        target_day = get_latest_available_day(records) or freshness["expected_day"]
+    else:
+        target_day = get_latest_available_day(records) or (get_prague_now().date() - pd.Timedelta(days=1)).isoformat()
     daily_records = [row for row in records if str(row.get("date")) == target_day]
     sheet_rows: list[dict[str, Any]] = []
     mail_lines: list[str] = []
@@ -594,6 +637,7 @@ def build_daily_kpi_summary(records: list[dict[str, Any]]) -> dict[str, Any]:
     return {
         "target_day": target_day,
         "generated_at": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+        "freshness": freshness or build_freshness_state(records),
         "sheet_rows": sheet_rows,
         "mail_lines": mail_lines,
     }
@@ -1546,15 +1590,15 @@ def save_comparison_dashboard(payload: dict[str, Any]) -> None:
     COMPARISON_OUTPUT_FILE.write_text(render_comparison_html(payload), encoding="utf-8")
 
 
-def save_daily_kpi_summary(records: list[dict[str, Any]]) -> None:
+def save_daily_kpi_summary(records: list[dict[str, Any]], freshness: dict[str, Any] | None = None) -> None:
     OUTPUT_DIR.mkdir(exist_ok=True)
     DAILY_KPI_FILE.write_text(
-        json.dumps(build_daily_kpi_summary(records), ensure_ascii=False, indent=2),
+        json.dumps(build_daily_kpi_summary(records, freshness=freshness), ensure_ascii=False, indent=2),
         encoding="utf-8",
     )
 
 
-def main(explicit_path: str | None = None) -> None:
+def main(explicit_path: str | None = None, allow_stale: bool = False) -> None:
     print("Startujem tvorbu dashboardu...")
     try:
         excel_path = resolve_excel_input_path(explicit_path)
@@ -1565,9 +1609,19 @@ def main(explicit_path: str | None = None) -> None:
 
     print(f"Nacitavam subor: {excel_path.name}")
     payload = build_payload_from_excel(excel_path)
+    freshness = build_freshness_state(payload["records"])
+    if freshness["cutoff_reached"]:
+        print(
+            "Kontrola cerstvosti: "
+            f"latest={freshness['latest_available_day'] or 'n/a'}, "
+            f"expected>={freshness['expected_day']}, cutoff={freshness['cutoff_time']} "
+            f"({freshness['timezone']})"
+        )
+    if not allow_stale:
+        ensure_fresh_daily_data(payload["records"])
     save_dashboard(payload)
     save_comparison_dashboard(payload)
-    save_daily_kpi_summary(payload["records"])
+    save_daily_kpi_summary(payload["records"], freshness=freshness)
 
     print("Hotovo.")
     print(f"Dashboard je ulozeny tu: {OUTPUT_FILE}")
@@ -1585,5 +1639,10 @@ if __name__ == "__main__":
             default="",
             help="Optional path to the Excel file. Defaults to the newest Excel in input/.",
         )
+        parser.add_argument(
+            "--allow-stale",
+            action="store_true",
+            help="Allow publishing even when the latest Excel day is older than expected.",
+        )
         args = parser.parse_args()
-        main(args.input_path or None)
+        main(args.input_path or None, allow_stale=args.allow_stale)

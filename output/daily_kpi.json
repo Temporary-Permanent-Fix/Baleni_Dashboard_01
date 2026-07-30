@@ -1,22 +1,31 @@
 {
-  "target_day": "2026-07-28",
-  "generated_at": "2026-07-30 11:24:44",
+  "target_day": "2026-07-30",
+  "generated_at": "2026-07-30 13:39:00",
+  "freshness": {
+    "checked_at": "2026-07-30 13:38:59 CEST",
+    "timezone": "Europe/Prague",
+    "cutoff_time": "11:15",
+    "expected_day": "2026-07-29",
+    "latest_available_day": "2026-07-30",
+    "cutoff_reached": true,
+    "is_stale": false
+  },
   "sheet_rows": [
     {
       "sheet": "SKLC3",
-      "total_count": 4561.0,
-      "eliminated_count": 4165.0,
-      "ratio": 0.9131769348827011
+      "total_count": 4445.0,
+      "eliminated_count": 4227.0,
+      "ratio": 0.9509561304836895
     },
     {
       "sheet": "CZLC4",
-      "total_count": 6866.0,
-      "eliminated_count": 6450.0,
-      "ratio": 0.9394115933585785
+      "total_count": 5759.0,
+      "eliminated_count": 5412.0,
+      "ratio": 0.9397464837645425
     }
   ],
   "mail_lines": [
-    "SKLC3: 91,3 % (4 165 / 4 561) eliminace z geosize = SPO, doprava = alzabox",
-    "CZLC4: 93,9 % (6 450 / 6 866) eliminace z geosize = SPO, doprava = alzabox"
+    "SKLC3: 95,1 % (4 227 / 4 445) eliminace z geosize = SPO, doprava = alzabox",
+    "CZLC4: 94,0 % (5 412 / 5 759) eliminace z geosize = SPO, doprava = alzabox"
   ]
 }
