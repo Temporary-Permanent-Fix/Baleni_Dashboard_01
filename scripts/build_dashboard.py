@@ -41,12 +41,37 @@ COLUMN_ALIASES = {
 
 GEOSIZE_VALUES = {"SPO", "BPO", "XPO", "XL", "VB"}
 STATION_VALUES = {"EXPRESS", "EXPRES", "L40", "MO", "SO01", "SOA1", "SOA0", "XXL"}
+BALIKOVKA_MARKERS = ("balikovka", "balikovka_den")
 
 
 def normalize_text(value: Any) -> str:
     text = unicodedata.normalize("NFKD", str(value).strip().lower())
     text = "".join(ch for ch in text if not unicodedata.combining(ch))
     return re.sub(r"[^a-z0-9]+", " ", text).strip()
+
+
+def is_balikovka_workbook(path: Path) -> bool:
+    normalized_name = normalize_text(path.name)
+    if any(marker in normalized_name for marker in BALIKOVKA_MARKERS):
+        return True
+
+    try:
+        workbook = load_workbook(path, read_only=True, data_only=True)
+        return any(
+            any(marker in normalize_text(sheet_name) for marker in BALIKOVKA_MARKERS)
+            for sheet_name in workbook.sheetnames
+        )
+    except Exception:
+        return False
+
+
+def require_packaging_workbook(path: Path) -> None:
+    if is_balikovka_workbook(path):
+        raise ValueError(
+            "Tento Excel vyzera ako balikovka workbook. "
+            "Packaging dashboard ho z bezpecnostnych dovodov odmieta. "
+            "Pouzi Data_pro _balení dashboard_6_2026.xlsx alebo iny packaging input."
+        )
 
 
 def find_excel_file() -> Path:
@@ -62,6 +87,13 @@ def find_excel_file() -> Path:
             "V zlozke input nie je ziaden Excel subor. Vloz tam .xlsx, .xls alebo .xlsm subor."
         )
 
+    packaging_files = [path for path in excel_files if not is_balikovka_workbook(path)]
+    if not packaging_files:
+        raise FileNotFoundError(
+            "V zlozke input som nasiel len balikovka workbook. "
+            "Packaging dashboard ho nepouzije. Vloz packaging Excel typu Data_pro..."
+        )
+
     def workbook_priority(path: Path) -> tuple[int, float, str]:
         try:
             workbook = load_workbook(path, read_only=True, data_only=True)
@@ -70,7 +102,7 @@ def find_excel_file() -> Path:
             preferred = False
         return (1 if preferred else 0, path.stat().st_mtime, path.name.lower())
 
-    return sorted(excel_files, key=workbook_priority, reverse=True)[0]
+    return sorted(packaging_files, key=workbook_priority, reverse=True)[0]
 
 
 def resolve_excel_input_path(explicit_path: str | None = None) -> Path:
@@ -80,6 +112,7 @@ def resolve_excel_input_path(explicit_path: str | None = None) -> Path:
             path = (PROJECT_DIR / path).resolve()
         if not path.exists():
             raise FileNotFoundError(f"Excel subor neexistuje: {path}")
+        require_packaging_workbook(path)
         return path
 
     env_path = os.environ.get("EXCEL_INPUT_PATH", "").strip()
@@ -89,6 +122,7 @@ def resolve_excel_input_path(explicit_path: str | None = None) -> Path:
             path = (PROJECT_DIR / path).resolve()
         if not path.exists():
             raise FileNotFoundError(f"Excel subor neexistuje: {path}")
+        require_packaging_workbook(path)
         return path
 
     return find_excel_file()
@@ -145,6 +179,7 @@ def download_excel_to_temp(source_url: str) -> Path:
 
 
 def build_payload_from_excel(excel_path: Path) -> dict[str, Any]:
+    require_packaging_workbook(excel_path)
     try:
         records, metadata = load_records(excel_path)
     except Exception:
@@ -162,6 +197,7 @@ def build_payload_from_excel(excel_path: Path) -> dict[str, Any]:
 def build_payload_from_source(source_url: str) -> dict[str, Any]:
     readable_copy = download_excel_to_temp(source_url)
     try:
+        require_packaging_workbook(readable_copy)
         records, metadata = load_records(readable_copy)
     finally:
         try:

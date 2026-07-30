@@ -18,7 +18,8 @@ Excel subory vkladaj do priecinka:
 input/
 ```
 
-Skript berie najnovsi Excel subor s koncovkou `.xlsx`, `.xls` alebo `.xlsm`.
+Skript berie najnovsi packaging Excel subor s koncovkou `.xlsx`, `.xls` alebo `.xlsm`.
+Balikovka workbooky (`balikovka...`) su pre tento dashboard blokovane, aby sa nikdy omylom nedostali do produkcie.
 Ak je subor otvoreny v Exceli alebo zamknuty OneDrive syncom, skript si ho skopiruje do temp priecinka a cita kopiu.
 
 ## Co report zobrazuje
