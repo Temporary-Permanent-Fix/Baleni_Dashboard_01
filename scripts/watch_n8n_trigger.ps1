@@ -16,26 +16,19 @@ $ResolvedLogPath = if ([string]::IsNullOrWhiteSpace($LogPath)) {
     $LogPath
 }
 $TriggerFile = Join-Path $CloneDir "n8n\refresh.request.json"
-$RefreshScript = Join-Path $CloneDir "scripts\n8n_refresh_and_push.ps1"
-$HelperScripts = @(
-    "scripts\refresh_input_excel.ps1",
-    "scripts\n8n_refresh_and_push.ps1",
-    "scripts\refresh_local_dashboard.ps1",
-    "scripts\send_dashboard_email.py",
-    "scripts\send_dashboard_email_outlook.ps1"
-)
+$RefreshScript = Join-Path $ProjectDir "scripts\n8n_refresh_and_push.ps1"
 
 function Get-OriginUrl {
     $url = git -C $ProjectDir remote get-url origin 2>$null
     if ($LASTEXITCODE -ne 0 -or [string]::IsNullOrWhiteSpace($url)) {
         throw "Nenasiel som remote origin v hlavnom repozitari."
     }
+
     return $url.Trim()
 }
 
 function Ensure-CloneWorkspace {
     if (Test-Path -LiteralPath (Join-Path $CloneDir ".git")) {
-        Ensure-HelperScripts
         return
     }
 
@@ -55,22 +48,22 @@ function Ensure-CloneWorkspace {
     if ($LASTEXITCODE -ne 0) {
         throw "git clone failed."
     }
-
-    Ensure-HelperScripts
 }
 
-function Ensure-HelperScripts {
-    foreach ($relativePath in $HelperScripts) {
-        $sourcePath = Join-Path $ProjectDir $relativePath
-        $targetPath = Join-Path $CloneDir $relativePath
-        $targetDir = Split-Path -Parent $targetPath
-        if (-not (Test-Path -LiteralPath $sourcePath)) {
-            throw "Nenasiel som helper script v hlavnom repozitari: $sourcePath"
-        }
-
-        New-Item -ItemType Directory -Force -Path $targetDir | Out-Null
-        Copy-Item -LiteralPath $sourcePath -Destination $targetPath -Force
+function Reset-CloneWorkspace {
+    & git -C $CloneDir reset --hard --quiet
+    if ($LASTEXITCODE -ne 0) {
+        Write-Warning "git reset failed."
+        return $false
     }
+
+    & git -C $CloneDir clean -fd --quiet
+    if ($LASTEXITCODE -ne 0) {
+        Write-Warning "git clean failed."
+        return $false
+    }
+
+    return $true
 }
 
 function Get-FileSignature {
@@ -83,45 +76,19 @@ function Get-FileSignature {
     return (Get-FileHash -Algorithm SHA256 -LiteralPath $Path).Hash
 }
 
-function Remove-UntrackedHelperScripts {
-    foreach ($relativePath in $HelperScripts) {
-        $targetPath = Join-Path $CloneDir $relativePath
-        if (-not (Test-Path -LiteralPath $targetPath)) {
-            continue
-        }
-
-        $tracked = & git -C $CloneDir ls-files -- $relativePath
-        if ([string]::IsNullOrWhiteSpace($tracked)) {
-            Remove-Item -LiteralPath $targetPath -Force
-        }
-    }
-}
-
-function Test-RepositoryClean {
-    $status = git -C $CloneDir status --porcelain
-    if ($LASTEXITCODE -ne 0) {
-        return $false
-    }
-
-    $status = $status | Where-Object {
-        $_ -notmatch '^\?\?\s+scripts/n8n_refresh_and_push\.ps1$' -and
-        $_ -notmatch '^\?\?\s+scripts/refresh_input_excel\.ps1$' -and
-        $_ -notmatch '^\?\?\s+scripts/refresh_local_dashboard\.ps1$' -and
-        $_ -notmatch '^\?\?\s+scripts/send_dashboard_email\.py$' -and
-        $_ -notmatch '^\?\?\s+scripts/send_dashboard_email_outlook\.ps1$'
-    }
-    return [string]::IsNullOrWhiteSpace($status)
-}
-
 function Sync-Repository {
-    Remove-UntrackedHelperScripts
-
-    if (-not (Test-RepositoryClean)) {
-        Write-Warning "Repository is not clean. Skipping pull so local changes are not overwritten."
+    if (-not (Reset-CloneWorkspace)) {
         return $false
     }
 
-    & git -C $CloneDir pull --ff-only --quiet 2>$null | Out-Null
+    $previousErrorActionPreference = $ErrorActionPreference
+    $ErrorActionPreference = "SilentlyContinue"
+    try {
+        & git -C $CloneDir pull --ff-only --quiet 2>$null | Out-Null
+    } finally {
+        $ErrorActionPreference = $previousErrorActionPreference
+    }
+
     if ($LASTEXITCODE -ne 0) {
         Write-Warning "git pull failed."
         return $false
@@ -141,10 +108,6 @@ try {
     }
 
     Write-Host "Watcher log: $ResolvedLogPath"
-
-    if (-not (Test-Path -LiteralPath $TriggerFile)) {
-        throw "Trigger file not found in clone workspace: $TriggerFile"
-    }
 
     if (-not (Test-Path -LiteralPath $RefreshScript)) {
         throw "Could not find refresh script: $RefreshScript"

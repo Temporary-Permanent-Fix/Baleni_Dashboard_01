@@ -99,7 +99,7 @@ def build_freshness_state(records: list[dict[str, Any]]) -> dict[str, Any]:
     expected_day = (now.date() - pd.Timedelta(days=1)).isoformat()
     latest_available_day = get_latest_available_day(records)
     cutoff_reached = (now.hour, now.minute) >= (FRESHNESS_CUTOFF_HOUR, FRESHNESS_CUTOFF_MINUTE)
-    is_stale = bool(cutoff_reached and (not latest_available_day or latest_available_day < expected_day))
+    is_stale = bool(not latest_available_day or latest_available_day < expected_day)
     return {
         "checked_at": now.strftime("%Y-%m-%d %H:%M:%S %Z"),
         "timezone": str(FRESHNESS_TIMEZONE),
@@ -117,8 +117,8 @@ def ensure_fresh_daily_data(records: list[dict[str, Any]]) -> dict[str, Any]:
         latest_day = freshness["latest_available_day"] or "ziadny dostupny datum"
         raise RuntimeError(
             "Excel je stale a refresh bol zastaveny, aby sme nepustili stare data do gitu ani do Streamlitu. "
-            f"Posledny dostupny den je {latest_day}, ale po {freshness['cutoff_time']} "
-            f"({freshness['timezone']}) ocakavame aspon {freshness['expected_day']}."
+            f"Posledny dostupny den je {latest_day}, ale ocakavame aspon {freshness['expected_day']} "
+            f"({freshness['timezone']})."
         )
     return freshness
 
@@ -284,6 +284,16 @@ def render_streamlit_dashboard() -> None:
             )
             st.caption(f"Chyba pri načítaní zdroja: {error}")
         else:
+            freshness = build_freshness_state(payload["records"])
+            if freshness["is_stale"]:
+                st.error(
+                    "Live Excel neobsahuje očakávaný včerajší deň, takže ho nezobrazujem. "
+                    f"Latest={freshness['latest_available_day'] or 'n/a'}, expected={freshness['expected_day']}."
+                )
+                st.caption(
+                    "Ak sa toto zobrazuje po refreshi, problém je vo vygenerovanom Exceli, nie v appke."
+                )
+                return
             st.components.v1.html(render_html(payload), height=1600, scrolling=True)
             st.caption(
                 f"Zdroj: {payload['metadata'].get('source_file', 'unknown')} | "
@@ -603,9 +613,9 @@ def build_comparison_summary(records: list[dict[str, Any]]) -> dict[str, Any]:
 
 def build_daily_kpi_summary(records: list[dict[str, Any]], freshness: dict[str, Any] | None = None) -> dict[str, Any]:
     if freshness:
-        target_day = get_latest_available_day(records) or freshness["expected_day"]
+        target_day = freshness["expected_day"]
     else:
-        target_day = get_latest_available_day(records) or (get_prague_now().date() - pd.Timedelta(days=1)).isoformat()
+        target_day = (get_prague_now().date() - pd.Timedelta(days=1)).isoformat()
     daily_records = [row for row in records if str(row.get("date")) == target_day]
     sheet_rows: list[dict[str, Any]] = []
     mail_lines: list[str] = []
@@ -1619,6 +1629,11 @@ def main(explicit_path: str | None = None, allow_stale: bool = False) -> None:
         )
     if not allow_stale:
         ensure_fresh_daily_data(payload["records"])
+    if freshness["latest_available_day"] != freshness["expected_day"]:
+        print(
+            "Varovanie: posledny den v Exceli nepasuje na ocakavany den. "
+            f"latest={freshness['latest_available_day'] or 'n/a'}, expected={freshness['expected_day']}."
+        )
     save_dashboard(payload)
     save_comparison_dashboard(payload)
     save_daily_kpi_summary(payload["records"], freshness=freshness)
