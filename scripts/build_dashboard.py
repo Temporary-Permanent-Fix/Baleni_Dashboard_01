@@ -15,7 +15,6 @@ from pathlib import Path
 from typing import Any
 from urllib.parse import urlparse
 from urllib.request import Request, urlopen
-from zoneinfo import ZoneInfo
 
 import pandas as pd
 from openpyxl import load_workbook
@@ -29,9 +28,6 @@ COMPARISON_OUTPUT_FILE = OUTPUT_DIR / "comparison_dashboard.html"
 DAILY_KPI_FILE = OUTPUT_DIR / "daily_kpi.json"
 
 TARGET_RATIO = 0.75
-FRESHNESS_TIMEZONE = ZoneInfo(os.environ.get("DASHBOARD_TIMEZONE", "Europe/Prague"))
-FRESHNESS_CUTOFF_HOUR = int(os.environ.get("DASHBOARD_FRESHNESS_CUTOFF_HOUR", "11"))
-FRESHNESS_CUTOFF_MINUTE = int(os.environ.get("DASHBOARD_FRESHNESS_CUTOFF_MINUTE", "15"))
 
 COLUMN_ALIASES = {
     "date": ["datum", "date", "day", "den"],
@@ -45,82 +41,12 @@ COLUMN_ALIASES = {
 
 GEOSIZE_VALUES = {"SPO", "BPO", "XPO", "XL", "VB"}
 STATION_VALUES = {"EXPRESS", "EXPRES", "L40", "MO", "SO01", "SOA1", "SOA0", "XXL"}
-BALIKOVKA_MARKERS = ("balikovka", "balikovka_den")
 
 
 def normalize_text(value: Any) -> str:
     text = unicodedata.normalize("NFKD", str(value).strip().lower())
     text = "".join(ch for ch in text if not unicodedata.combining(ch))
     return re.sub(r"[^a-z0-9]+", " ", text).strip()
-
-
-def is_balikovka_workbook(path: Path) -> bool:
-    normalized_name = normalize_text(path.name)
-    if any(marker in normalized_name for marker in BALIKOVKA_MARKERS):
-        return True
-
-    try:
-        workbook = load_workbook(path, read_only=True, data_only=True)
-        return any(
-            any(marker in normalize_text(sheet_name) for marker in BALIKOVKA_MARKERS)
-            for sheet_name in workbook.sheetnames
-        )
-    except Exception:
-        return False
-
-
-def require_packaging_workbook(path: Path) -> None:
-    if is_balikovka_workbook(path):
-        raise ValueError(
-            "Tento Excel vyzera ako balikovka workbook. "
-            "Packaging dashboard ho z bezpecnostnych dovodov odmieta. "
-            "Pouzi Data_pro _balení dashboard_6_2026.xlsx alebo iny packaging input."
-        )
-
-
-def get_prague_now() -> datetime:
-    return datetime.now(FRESHNESS_TIMEZONE)
-
-
-def get_latest_available_day(records: list[dict[str, Any]]) -> str | None:
-    available_days = sorted(
-        {
-            str(row.get("date"))
-            for row in records
-            if isinstance(row.get("date"), str)
-            and re.fullmatch(r"\d{4}-\d{2}-\d{2}", str(row.get("date")))
-        }
-    )
-    return available_days[-1] if available_days else None
-
-
-def build_freshness_state(records: list[dict[str, Any]]) -> dict[str, Any]:
-    now = get_prague_now()
-    expected_day = (now.date() - pd.Timedelta(days=1)).isoformat()
-    latest_available_day = get_latest_available_day(records)
-    cutoff_reached = (now.hour, now.minute) >= (FRESHNESS_CUTOFF_HOUR, FRESHNESS_CUTOFF_MINUTE)
-    is_stale = bool(not latest_available_day or latest_available_day < expected_day)
-    return {
-        "checked_at": now.strftime("%Y-%m-%d %H:%M:%S %Z"),
-        "timezone": str(FRESHNESS_TIMEZONE),
-        "cutoff_time": f"{FRESHNESS_CUTOFF_HOUR:02d}:{FRESHNESS_CUTOFF_MINUTE:02d}",
-        "expected_day": expected_day,
-        "latest_available_day": latest_available_day,
-        "cutoff_reached": cutoff_reached,
-        "is_stale": is_stale,
-    }
-
-
-def ensure_fresh_daily_data(records: list[dict[str, Any]]) -> dict[str, Any]:
-    freshness = build_freshness_state(records)
-    if freshness["is_stale"]:
-        latest_day = freshness["latest_available_day"] or "ziadny dostupny datum"
-        raise RuntimeError(
-            "Excel je stale a refresh bol zastaveny, aby sme nepustili stare data do gitu ani do Streamlitu. "
-            f"Posledny dostupny den je {latest_day}, ale ocakavame aspon {freshness['expected_day']} "
-            f"({freshness['timezone']})."
-        )
-    return freshness
 
 
 def find_excel_file() -> Path:
@@ -135,23 +61,7 @@ def find_excel_file() -> Path:
         raise FileNotFoundError(
             "V zlozke input nie je ziaden Excel subor. Vloz tam .xlsx, .xls alebo .xlsm subor."
         )
-
-    packaging_files = [path for path in excel_files if not is_balikovka_workbook(path)]
-    if not packaging_files:
-        raise FileNotFoundError(
-            "V zlozke input som nasiel len balikovka workbook. "
-            "Packaging dashboard ho nepouzije. Vloz packaging Excel typu Data_pro..."
-        )
-
-    def workbook_priority(path: Path) -> tuple[int, float, str]:
-        try:
-            workbook = load_workbook(path, read_only=True, data_only=True)
-            preferred = {"SKLC3", "CZLC4"}.issubset(set(workbook.sheetnames))
-        except Exception:
-            preferred = False
-        return (1 if preferred else 0, path.stat().st_mtime, path.name.lower())
-
-    return sorted(packaging_files, key=workbook_priority, reverse=True)[0]
+    return sorted(excel_files, key=lambda path: path.stat().st_mtime, reverse=True)[0]
 
 
 def resolve_excel_input_path(explicit_path: str | None = None) -> Path:
@@ -161,7 +71,6 @@ def resolve_excel_input_path(explicit_path: str | None = None) -> Path:
             path = (PROJECT_DIR / path).resolve()
         if not path.exists():
             raise FileNotFoundError(f"Excel subor neexistuje: {path}")
-        require_packaging_workbook(path)
         return path
 
     env_path = os.environ.get("EXCEL_INPUT_PATH", "").strip()
@@ -171,7 +80,6 @@ def resolve_excel_input_path(explicit_path: str | None = None) -> Path:
             path = (PROJECT_DIR / path).resolve()
         if not path.exists():
             raise FileNotFoundError(f"Excel subor neexistuje: {path}")
-        require_packaging_workbook(path)
         return path
 
     return find_excel_file()
@@ -228,25 +136,20 @@ def download_excel_to_temp(source_url: str) -> Path:
 
 
 def build_payload_from_excel(excel_path: Path) -> dict[str, Any]:
-    require_packaging_workbook(excel_path)
+    readable_copy = copy_excel_for_reading(excel_path)
     try:
-        records, metadata = load_records(excel_path)
-    except Exception:
-        readable_copy = copy_excel_for_reading(excel_path)
+        records, metadata = load_records(readable_copy)
+    finally:
         try:
-            records, metadata = load_records(readable_copy)
-        finally:
-            try:
-                readable_copy.unlink(missing_ok=True)
-            except OSError:
-                pass
+            readable_copy.unlink(missing_ok=True)
+        except OSError:
+            pass
     return build_payload(records, metadata)
 
 
 def build_payload_from_source(source_url: str) -> dict[str, Any]:
     readable_copy = download_excel_to_temp(source_url)
     try:
-        require_packaging_workbook(readable_copy)
         records, metadata = load_records(readable_copy)
     finally:
         try:
@@ -284,16 +187,6 @@ def render_streamlit_dashboard() -> None:
             )
             st.caption(f"Chyba pri načítaní zdroja: {error}")
         else:
-            freshness = build_freshness_state(payload["records"])
-            if freshness["is_stale"]:
-                st.error(
-                    "Live Excel neobsahuje očakávaný včerajší deň, takže ho nezobrazujem. "
-                    f"Latest={freshness['latest_available_day'] or 'n/a'}, expected={freshness['expected_day']}."
-                )
-                st.caption(
-                    "Ak sa toto zobrazuje po refreshi, problém je vo vygenerovanom Exceli, nie v appke."
-                )
-                return
             st.components.v1.html(render_html(payload), height=1600, scrolling=True)
             st.caption(
                 f"Zdroj: {payload['metadata'].get('source_file', 'unknown')} | "
@@ -611,11 +504,16 @@ def build_comparison_summary(records: list[dict[str, Any]]) -> dict[str, Any]:
     }
 
 
-def build_daily_kpi_summary(records: list[dict[str, Any]], freshness: dict[str, Any] | None = None) -> dict[str, Any]:
-    if freshness:
-        target_day = freshness["expected_day"]
-    else:
-        target_day = (get_prague_now().date() - pd.Timedelta(days=1)).isoformat()
+def build_daily_kpi_summary(records: list[dict[str, Any]]) -> dict[str, Any]:
+    available_days = sorted(
+        {
+            str(row.get("date"))
+            for row in records
+            if str(row.get("date")) and str(row.get("date")) != "Nezadane"
+        }
+    )
+    fallback_day = (datetime.now().date() - pd.Timedelta(days=1)).isoformat()
+    target_day = available_days[-1] if available_days else fallback_day
     daily_records = [row for row in records if str(row.get("date")) == target_day]
     sheet_rows: list[dict[str, Any]] = []
     mail_lines: list[str] = []
@@ -647,7 +545,6 @@ def build_daily_kpi_summary(records: list[dict[str, Any]], freshness: dict[str, 
     return {
         "target_day": target_day,
         "generated_at": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
-        "freshness": freshness or build_freshness_state(records),
         "sheet_rows": sheet_rows,
         "mail_lines": mail_lines,
     }
@@ -1028,25 +925,6 @@ def render_html(payload: dict[str, Any]) -> str:
       return String(value ?? 'Nezadane');
     }
 
-    function parseDateKey(value) {
-      if (value instanceof Date && !Number.isNaN(value.getTime())) {
-        return value;
-      }
-      const text = normalizeLabel(value);
-      if (!text || text === 'Nezadane') return null;
-      const parsed = new Date(`${text}T00:00:00`);
-      return Number.isNaN(parsed.getTime()) ? null : parsed;
-    }
-
-    function formatTrendDate(value) {
-      const parsed = parseDateKey(value);
-      if (!parsed) return normalizeLabel(value);
-      const day = String(parsed.getDate()).padStart(2, '0');
-      const month = String(parsed.getMonth() + 1).padStart(2, '0');
-      const year = parsed.getFullYear();
-      return `${day}.${month}.${year}`;
-    }
-
     function displayLabel(field, value) {
       const normalized = normalizeLabel(value);
       if (field === 'doprava' && normalized === 'Nezadane') return 'Pobocka';
@@ -1104,14 +982,7 @@ def render_html(payload: dict[str, Any]) -> str:
         item.total += Number(row.total_count) || 0;
         map.set(key, item);
       }
-      return [...map.values()].sort((a, b) => {
-        const aDate = parseDateKey(a.key);
-        const bDate = parseDateKey(b.key);
-        if (aDate && bDate) return aDate - bDate;
-        if (aDate) return -1;
-        if (bDate) return 1;
-        return a.key.localeCompare(b.key, 'sk');
-      }).map(item => ({
+      return [...map.values()].sort((a, b) => a.key.localeCompare(b.key, 'sk')).map(item => ({
         ...item,
         ratio: item.total ? item.ab / item.total : 0,
       }));
@@ -1140,7 +1011,7 @@ def render_html(payload: dict[str, Any]) -> str:
       const targetY = y(targetRatio);
       const labelsLine = data.map((d, i) => {
         const show = data.length <= 12 || i === 0 || i === data.length - 1 || i % Math.ceil(data.length / 8) === 0;
-        return show ? `<text x="${x(i)}" y="${height - 16}" text-anchor="middle" font-size="11" fill="#5f6b7a">${escapeHtml(formatTrendDate(d.key))}</text>` : '';
+        return show ? `<text x="${x(i)}" y="${height - 16}" text-anchor="middle" font-size="11" fill="#5f6b7a">${escapeHtml(String(d.key).slice(5))}</text>` : '';
       }).join('');
 
       holder.innerHTML = `
@@ -1276,18 +1147,10 @@ def render_html(payload: dict[str, Any]) -> str:
       function renderMeta(rows) {
         const meta = payload.metadata || {};
         const totalRows = sheetRows.length;
-        const validDates = rows
-          .map(row => parseDateKey(row.date))
-          .filter(Boolean)
-          .sort((a, b) => a - b);
-        const dateRange = validDates.length
-          ? `${formatTrendDate(validDates[0])} - ${formatTrendDate(validDates[validDates.length - 1])}`
-          : 'bez dátumov';
         document.getElementById(`${prefix}meta`).innerHTML = [
           `Source: ${meta.source_file || 'unknown'}`,
           `Sheet: ${sheetName}`,
           `Generated: ${meta.generated_at || ''}`,
-          `Date range: ${dateRange}`,
           `Rows: ${formatInt(rows.length)} / ${formatInt(totalRows)}`,
           `Detected: ${info.detected?.doprava ? 'AB + Total + transport' : (info.detected?.ab_eliminated ? 'AB + Total' : 'pivot/flat')}`,
         ].map(text => `<span class="pill">${text}</span>`).join('');
@@ -1600,15 +1463,15 @@ def save_comparison_dashboard(payload: dict[str, Any]) -> None:
     COMPARISON_OUTPUT_FILE.write_text(render_comparison_html(payload), encoding="utf-8")
 
 
-def save_daily_kpi_summary(records: list[dict[str, Any]], freshness: dict[str, Any] | None = None) -> None:
+def save_daily_kpi_summary(records: list[dict[str, Any]]) -> None:
     OUTPUT_DIR.mkdir(exist_ok=True)
     DAILY_KPI_FILE.write_text(
-        json.dumps(build_daily_kpi_summary(records, freshness=freshness), ensure_ascii=False, indent=2),
+        json.dumps(build_daily_kpi_summary(records), ensure_ascii=False, indent=2),
         encoding="utf-8",
     )
 
 
-def main(explicit_path: str | None = None, allow_stale: bool = False) -> None:
+def main(explicit_path: str | None = None) -> None:
     print("Startujem tvorbu dashboardu...")
     try:
         excel_path = resolve_excel_input_path(explicit_path)
@@ -1619,24 +1482,9 @@ def main(explicit_path: str | None = None, allow_stale: bool = False) -> None:
 
     print(f"Nacitavam subor: {excel_path.name}")
     payload = build_payload_from_excel(excel_path)
-    freshness = build_freshness_state(payload["records"])
-    if freshness["cutoff_reached"]:
-        print(
-            "Kontrola cerstvosti: "
-            f"latest={freshness['latest_available_day'] or 'n/a'}, "
-            f"expected>={freshness['expected_day']}, cutoff={freshness['cutoff_time']} "
-            f"({freshness['timezone']})"
-        )
-    if not allow_stale:
-        ensure_fresh_daily_data(payload["records"])
-    if freshness["latest_available_day"] != freshness["expected_day"]:
-        print(
-            "Varovanie: posledny den v Exceli nepasuje na ocakavany den. "
-            f"latest={freshness['latest_available_day'] or 'n/a'}, expected={freshness['expected_day']}."
-        )
     save_dashboard(payload)
     save_comparison_dashboard(payload)
-    save_daily_kpi_summary(payload["records"], freshness=freshness)
+    save_daily_kpi_summary(payload["records"])
 
     print("Hotovo.")
     print(f"Dashboard je ulozeny tu: {OUTPUT_FILE}")
@@ -1654,10 +1502,5 @@ if __name__ == "__main__":
             default="",
             help="Optional path to the Excel file. Defaults to the newest Excel in input/.",
         )
-        parser.add_argument(
-            "--allow-stale",
-            action="store_true",
-            help="Allow publishing even when the latest Excel day is older than expected.",
-        )
         args = parser.parse_args()
-        main(args.input_path or None, allow_stale=args.allow_stale)
+        main(args.input_path or None)
