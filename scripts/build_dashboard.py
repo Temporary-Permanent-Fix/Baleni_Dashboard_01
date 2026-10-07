@@ -672,7 +672,8 @@ def render_html(payload: dict[str, Any]) -> str:
       font-weight: 600;
       text-transform: uppercase;
     }
-    select {
+    select, input[type="date"] {
+      box-sizing: border-box;
       min-height: 38px;
       border: 1px solid var(--line);
       border-radius: 8px;
@@ -1079,7 +1080,7 @@ def render_html(payload: dict[str, Any]) -> str:
         <div class="dashboard-head">
           <div>
             <h2>Dashboard ${index + 1} - ${escapeHtml(sheetName)}</h2>
-            <p>Same conditions as the first dashboard, rendered from the same workbook.</p>
+            <p>Aktuálny deň je posledný dostupný deň v dátach skladu. Posledných 7 dní zahŕňa aj tento deň.</p>
           </div>
           <div class="meta" id="${prefix}meta"></div>
         </div>
@@ -1128,15 +1129,38 @@ def render_html(payload: dict[str, Any]) -> str:
       document.getElementById('dashboards').appendChild(root);
 
       const state = {
-        date: 'all',
         geosize: 'all',
         station: 'all',
         packing_group: 'all',
         doprava: 'all',
       };
+      const availableDates = [...new Set(sheetRows.map(row => row.date))]
+        .filter(day => /^[0-9]{4}-[0-9]{2}-[0-9]{2}$/.test(day)).sort();
+      const firstDate = availableDates[0] || '';
+      const latestDate = availableDates[availableDates.length - 1] || '';
+      const period = { preset: 'day', from: latestDate, to: latestDate };
+
+      function applyPeriod(preset) {
+        period.preset = preset;
+        if (preset === 'all') {
+          period.from = firstDate;
+          period.to = latestDate;
+        } else if (preset === 'day' || preset === 'week') {
+          period.to = latestDate;
+          period.from = latestDate;
+          if (preset === 'week' && latestDate) {
+            const start = new Date(`${latestDate}T00:00:00Z`);
+            start.setUTCDate(start.getUTCDate() - 6);
+            period.from = start.toISOString().slice(0, 10);
+          }
+        }
+        render();
+      }
 
       function filteredRows() {
         return sheetRows.filter(row => {
+          if (period.from && row.date < period.from) return false;
+          if (period.to && row.date > period.to) return false;
           return Object.entries(state).every(([field, selected]) => {
             if (selected === 'all') return true;
             return normalizeLabel(row[field]) === selected;
@@ -1158,9 +1182,29 @@ def render_html(payload: dict[str, Any]) -> str:
 
       function renderFilters() {
         const holder = document.getElementById(`${prefix}filters`);
-        holder.innerHTML = Object.keys(labels).map(field => `
+        holder.innerHTML = `
+          <label>Obdobie<select id="${prefix}period">
+            <option value="day">Aktuálny deň</option>
+            <option value="week">Posledných 7 dní</option>
+            <option value="custom">Vlastný rozsah</option>
+            <option value="all">Celé obdobie</option>
+          </select></label>
+          <label>Dátum od<input type="date" id="${prefix}dateFrom" value="${period.from}" max="${latestDate}"></label>
+          <label>Dátum do<input type="date" id="${prefix}dateTo" value="${period.to}" max="${latestDate}"></label>
+          <p role="status" style="grid-column: 1 / -1; margin: 0;" id="${prefix}periodStatus">${period.from && period.to && period.from > period.to ? 'Dátum od musí byť skorší alebo rovnaký ako dátum do.' : `Obdobie: ${period.from || 'od začiatku'} – ${period.to || 'do konca'}`}</p>
+        ` + Object.keys(labels).filter(field => field !== 'date').map(field => `
           <label>${labels[field]}<select id="${prefix}filter_${field}"></select></label>
         `).join('');
+        const periodSelect = document.getElementById(`${prefix}period`);
+        periodSelect.value = period.preset;
+        periodSelect.onchange = event => applyPeriod(event.target.value);
+        for (const [suffix, key] of [['dateFrom', 'from'], ['dateTo', 'to']]) {
+          document.getElementById(`${prefix}${suffix}`).onchange = event => {
+            period[key] = event.target.value;
+            period.preset = 'custom';
+            render();
+          };
+        }
         for (const field of Object.keys(state)) {
           const select = document.getElementById(`${prefix}filter_${field}`);
           if (!select) continue;
@@ -1471,7 +1515,26 @@ def save_daily_kpi_summary(records: list[dict[str, Any]]) -> None:
     )
 
 
-def main(explicit_path: str | None = None) -> None:
+def supplement_history(payload: dict[str, Any], history: dict[str, Any]) -> dict[str, Any]:
+    """Keep history before each sheet's new reporting period, without overlap."""
+    starts: dict[str, str] = {}
+    for row in payload["records"]:
+        sheet, day = row["sheet"], row["date"]
+        if not re.fullmatch(r"\d{4}-\d{2}-\d{2}", day):
+            raise ValueError(f"Invalid reporting date: {day}")
+        starts[sheet] = min(starts.get(sheet, day), day)
+    retained = [row for row in history["records"]
+                if row["sheet"] not in starts or row["date"] < starts[row["sheet"]]]
+    payload["records"] = retained + payload["records"]
+    payload["metadata"]["history_source_file"] = history["metadata"]["source_file"]
+    known = {info["sheet"] for info in payload["metadata"]["sheet_info"]}
+    payload["metadata"]["sheet_info"].extend(
+        info for info in history["metadata"]["sheet_info"] if info["sheet"] not in known
+    )
+    return payload
+
+
+def main(explicit_path: str | None = None, history_path: str | None = None) -> None:
     print("Startujem tvorbu dashboardu...")
     try:
         excel_path = resolve_excel_input_path(explicit_path)
@@ -1482,6 +1545,12 @@ def main(explicit_path: str | None = None) -> None:
 
     print(f"Nacitavam subor: {excel_path.name}")
     payload = build_payload_from_excel(excel_path)
+    payload["metadata"]["source_file"] = excel_path.name
+    if history_path:
+        history_file = resolve_excel_input_path(history_path)
+        history = build_payload_from_excel(history_file)
+        history["metadata"]["source_file"] = history_file.name
+        payload = supplement_history(payload, history)
     save_dashboard(payload)
     save_comparison_dashboard(payload)
     save_daily_kpi_summary(payload["records"])
@@ -1502,5 +1571,6 @@ if __name__ == "__main__":
             default="",
             help="Optional path to the Excel file. Defaults to the newest Excel in input/.",
         )
+        parser.add_argument("--history-input", default="", help="Historical workbook for dates before the new period in each sheet.")
         args = parser.parse_args()
-        main(args.input_path or None)
+        main(args.input_path or None, args.history_input or None)

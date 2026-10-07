@@ -42,6 +42,15 @@ python scripts/build_dashboard.py
 
 ## Vystup
 
+Pri doplneni Q3 so zachovanim historie pred zaciatkom noveho obdobia pre kazdy sklad:
+
+```powershell
+python scripts/build_dashboard.py --input "input/Data_pro _balení dashboard_Q3_2026.xlsx" --history-input "input/Data_pro _balení dashboard_6_2026.xlsx"
+powershell -NoProfile -ExecutionPolicy Bypass -File scripts/publish_to_docs.ps1
+```
+
+Prekryvajuce sa obdobie nahradi novy subor. Aj neuplny posledny den zostava zahrnuty.
+
 Po spusteni vznikne:
 
 ```text
